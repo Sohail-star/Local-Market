@@ -1,0 +1,18 @@
+// LocalMarket — Phase 4 PostgreSQL Prisma Schema (Milestone 1 Baseline)
+// Full domain models (Users, Capabilities, Categories, Products, Services,
+// Cart, Orders, Enquiries, Bookings, Notifications, Admin Audit) will be added in Milestone 2.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model SystemHealthMeta {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}

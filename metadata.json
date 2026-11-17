@@ -1,0 +1,6 @@
+{
+  "name": "LocalMarket",
+  "description": "LocalMarket — Your Local Marketplace in Pakistan. Buy products, book verified local services, and grow your business.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
