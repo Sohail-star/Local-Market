@@ -1,3 +1,4 @@
+import type { AdminRoleCode } from '@prisma/client';
 import type { Request } from 'express';
 
 export type CapabilityKey = 'buy' | 'sell' | 'offerServices' | 'hireProviders';
@@ -5,12 +6,22 @@ export type CapabilityKey = 'buy' | 'sell' | 'offerServices' | 'hireProviders';
 export interface AuthenticatedUserContext {
   userId: string;
   email: string;
-  isAdmin: boolean;
   capabilities: Record<CapabilityKey, boolean>;
+}
+
+export interface AuthenticatedAdminContext {
+  userId: string;
+  email: string;
+  fullName: string;
+  sessionId: string;
+  activeRole: AdminRoleCode;
+  roles: AdminRoleCode[];
+  permissions: string[];
 }
 
 export interface AuthenticatedRequest extends Request {
   auth?: AuthenticatedUserContext;
+  adminAuth?: AuthenticatedAdminContext;
 }
 
 export interface ApiSuccessResponse<T = unknown> {

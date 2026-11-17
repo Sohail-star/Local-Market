@@ -4,6 +4,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { env } from './env.ts';
 import { getPrismaClient } from './prisma.ts';
+import { provisionInitialSuperAdminFromEnv } from '../services/adminAuthService.ts';
 import { logger } from '../utils/logger.ts';
 
 const execFileAsync = promisify(execFile);
@@ -68,7 +69,6 @@ export async function ensureDatabaseMigratedAndSeeded(): Promise<void> {
       `;
       appliedNames = new Set(rows.map((r) => r.migration_name));
     } catch {
-      // _prisma_migrations table does not exist yet on an uninitialized database
       appliedNames = new Set<string>();
     }
 
@@ -85,19 +85,25 @@ export async function ensureDatabaseMigratedAndSeeded(): Promise<void> {
       });
     }
 
-    const [categoryCount, locationCount, adminRoleCount] = await Promise.all([
+    const [categoryCount, locationCount, coreAdminRoleCount] = await Promise.all([
       client.category.count(),
       client.supportedLocation.count(),
-      client.adminRole.count(),
+      client.adminRole.count({
+        where: {
+          code: { in: ['SUPER_ADMIN', 'ADMIN', 'MODERATOR', 'SUPPORT'] },
+        },
+      }),
     ]);
 
-    if (categoryCount === 0 || locationCount === 0 || adminRoleCount === 0) {
+    if (categoryCount === 0 || locationCount === 0 || coreAdminRoleCount < 4) {
       logger.info('Executing idempotent Prisma seed script...');
       const seedOutput = await runNpmOrNpxCommand('npm', ['run', 'prisma:seed']);
       logger.info('Prisma seed completed.', {
         output: seedOutput.slice(0, 500),
       });
     }
+
+    await provisionInitialSuperAdminFromEnv();
   } catch (err) {
     const message = err instanceof Error ? redactSecrets(err.message) : 'Unknown bootstrap error.';
     logger.error('Database migration/seed check failed during server startup.', {

@@ -26,6 +26,8 @@ export async function getHealthStatus(
         database,
         integrations: {
           authSecretsConfigured: env.isAuthConfigured,
+          adminAuthConfigured: env.isAdminAuthConfigured,
+          adminSetupTokenConfigured: env.isAdminSetupTokenConfigured,
           cloudinaryConfigured: env.isCloudinaryConfigured,
         },
       }

@@ -36,6 +36,7 @@ import { NotificationsPage } from './pages/dashboard/NotificationsPage';
 import { ProviderDashboardPage } from './pages/dashboard/ProviderDashboardPage';
 import { SellerDashboardPage } from './pages/dashboard/SellerDashboardPage';
 import { AdminDashboardBlueprintPage } from './pages/admin/AdminDashboardBlueprintPage';
+import { AdminPortalPage } from './pages/admin/AdminPortalPage';
 import {
   BookingStatus,
   CartItem,
@@ -902,6 +903,8 @@ function AppRoutes() {
             />
           }
         />
+
+        <Route path="/admin" element={<AdminPortalPage />} />
 
         <Route path="/blog" element={<BlogSection />} />
         <Route path="/privacy" element={<PolicyPage kind="privacy" />} />

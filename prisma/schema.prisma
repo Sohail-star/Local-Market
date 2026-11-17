@@ -129,7 +129,9 @@ enum NotificationType {
 
 enum AdminRoleCode {
   SUPER_ADMIN
+  ADMIN
   MODERATOR
+  SUPPORT
   SUPPORT_ADMIN
   CATALOG_ADMIN
 }
@@ -201,9 +203,10 @@ model User {
   providerBookings ServiceBooking[] @relation("BookingProvider")
   notifications    Notification[]
 
-  // Server-controlled Admin RBAC & Audit relationships
+  // Server-controlled Admin RBAC, Sessions & Audit relationships
   adminRoleAssignments UserAdminRole[] @relation("UserAdminAssignments")
   grantedAdminRoles    UserAdminRole[] @relation("AdminRoleGrantor")
+  adminSessions        AdminSession[]  @relation("UserAdminSessions")
   adminAuditLogs       AdminAuditLog[] @relation("AuditActor")
 
   // Moderation & abuse reporting relationships
@@ -675,6 +678,24 @@ model UserAdminRole {
   @@unique([userId, roleId])
   @@index([userId, isActive])
   @@map("user_admin_roles")
+}
+
+model AdminSession {
+  id             String        @id @default(cuid())
+  userId         String
+  tokenHash      String        @unique
+  activeRoleCode AdminRoleCode
+  ipAddress      String?
+  userAgent      String?
+  expiresAt      DateTime
+  lastUsedAt     DateTime      @default(now())
+  revokedAt      DateTime?
+  createdAt      DateTime      @default(now())
+
+  user User @relation("UserAdminSessions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt])
+  @@map("admin_sessions")
 }
 
 model AdminAuditLog {

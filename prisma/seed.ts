@@ -457,11 +457,28 @@ const ADMIN_ROLE_DEFINITIONS = [
   {
     code: AdminRoleCode.SUPER_ADMIN,
     name: 'Super Administrator',
-    description: 'Full server-verified platform governance, RBAC assignment, and system audit authority.',
+    description: 'Full server-verified platform governance, admin role assignment, and system audit authority.',
     permissions: [
+      'admin:accounts:read',
+      'admin:accounts:write',
+      'admin:roles:assign',
       'admin:users:read',
       'admin:users:write',
-      'admin:roles:assign',
+      'admin:listings:moderate',
+      'admin:categories:write',
+      'admin:locations:write',
+      'admin:reports:resolve',
+      'admin:audit:read',
+    ],
+  },
+  {
+    code: AdminRoleCode.ADMIN,
+    name: 'Platform Administrator',
+    description: 'Manage users, seller/provider verifications, listings, reports, and inspect admin audit logs.',
+    permissions: [
+      'admin:accounts:read',
+      'admin:users:read',
+      'admin:users:write',
       'admin:listings:moderate',
       'admin:categories:write',
       'admin:locations:write',
@@ -476,13 +493,23 @@ const ADMIN_ROLE_DEFINITIONS = [
     permissions: [
       'admin:listings:moderate',
       'admin:reports:resolve',
-      'admin:audit:read',
+      'admin:users:read',
+    ],
+  },
+  {
+    code: AdminRoleCode.SUPPORT,
+    name: 'Customer & Provider Support',
+    description: 'Assist buyers, sellers, and service providers with account verification and dispute reports.',
+    permissions: [
+      'admin:users:read',
+      'admin:users:verify',
+      'admin:reports:resolve',
     ],
   },
   {
     code: AdminRoleCode.SUPPORT_ADMIN,
-    name: 'Customer & Provider Support',
-    description: 'Assist verified buyers, sellers, and service providers with order/booking disputes.',
+    name: 'Legacy Support Admin',
+    description: 'Backwards-compatible support administrator role.',
     permissions: [
       'admin:users:read',
       'admin:reports:resolve',

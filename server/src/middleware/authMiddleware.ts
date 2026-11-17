@@ -35,19 +35,3 @@ export function requireCapability(capability: CapabilityKey) {
     next();
   };
 }
-
-export function requireAdmin(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): void {
-  if (!req.auth) {
-    sendError(res, 401, 'Authentication required.');
-    return;
-  }
-  if (!req.auth.isAdmin) {
-    sendError(res, 403, 'Administrator privileges required.');
-    return;
-  }
-  next();
-}
