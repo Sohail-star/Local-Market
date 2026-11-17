@@ -2,11 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import { env } from './server/src/config/env.ts';
+import { ensureDatabaseMigratedAndSeeded } from './server/src/config/dbBootstrap.ts';
 import { disconnectPrisma } from './server/src/config/prisma.ts';
 import { createApiApp } from './server/src/app.ts';
 import { logger } from './server/src/utils/logger.ts';
 
 async function startServer() {
+  await ensureDatabaseMigratedAndSeeded();
+
   const app = createApiApp();
 
   if (!env.isProduction) {

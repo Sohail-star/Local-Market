@@ -7,6 +7,7 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().trim().optional().default('http://localhost:3000'),
   APP_URL: z.string().trim().optional().default(''),
   DATABASE_URL: z.string().trim().optional().default(''),
+  DIRECT_URL: z.string().trim().optional().default(''),
   JWT_ACCESS_SECRET: z.string().trim().optional().default(''),
   JWT_REFRESH_SECRET: z.string().trim().optional().default(''),
   CLOUDINARY_CLOUD_NAME: z.string().trim().optional().default(''),
@@ -26,14 +27,16 @@ const rawEnv = parsed.data;
 const isPlaceholder = (val: string) =>
   !val || val.includes('CHANGE_ME') || val.startsWith('MY_');
 
+const isValidPostgresUrl = (val: string) =>
+  Boolean(val) &&
+  !val.includes('CHANGE_ME') &&
+  (val.startsWith('postgres://') || val.startsWith('postgresql://'));
+
 export const env = {
   ...rawEnv,
   isProduction: rawEnv.NODE_ENV === 'production',
-  isDatabaseConfigured:
-    Boolean(rawEnv.DATABASE_URL) &&
-    !rawEnv.DATABASE_URL.includes('CHANGE_ME') &&
-    (rawEnv.DATABASE_URL.startsWith('postgres://') ||
-      rawEnv.DATABASE_URL.startsWith('postgresql://')),
+  isDatabaseConfigured: isValidPostgresUrl(rawEnv.DATABASE_URL),
+  isDirectDatabaseConfigured: isValidPostgresUrl(rawEnv.DIRECT_URL),
   isAuthConfigured:
     !isPlaceholder(rawEnv.JWT_ACCESS_SECRET) && !isPlaceholder(rawEnv.JWT_REFRESH_SECRET),
   isCloudinaryConfigured:

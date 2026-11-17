@@ -11,7 +11,9 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "prisma:validate": "prisma validate",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "prisma:seed": "tsx prisma/seed.ts",
+    "db:deploy": "prisma migrate deploy && npm run prisma:seed"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

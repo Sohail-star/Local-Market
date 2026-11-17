@@ -10,14 +10,14 @@ export async function getHealthStatus(
 ): Promise<void> {
   try {
     const database = await checkDatabaseHealth();
-    const isDegraded = database.configured && database.status === 'unreachable';
+    const isDegraded = database.status === 'disconnected';
 
     sendSuccess(
       res,
       isDegraded ? 503 : 200,
       isDegraded
-        ? 'LocalMarket API running, but PostgreSQL database is unreachable.'
-        : 'LocalMarket API is healthy.',
+        ? database.error || 'LocalMarket API running, but PostgreSQL database is disconnected.'
+        : 'LocalMarket API and PostgreSQL database are connected.',
       {
         service: 'localmarket-api',
         environment: env.NODE_ENV,

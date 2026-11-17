@@ -1,6 +1,7 @@
-// LocalMarket — Phase 4 PostgreSQL Prisma Schema (Milestone 1 Baseline)
-// Full domain models (Users, Capabilities, Categories, Products, Services,
-// Cart, Orders, Enquiries, Bookings, Notifications, Admin Audit) will be added in Milestone 2.
+// =============================================================================
+// LocalMarket Pakistan — Phase 4 PostgreSQL Relational Schema (Milestone 2)
+// Prisma 7 ORM (postgresql provider; URL configured in prisma.config.ts)
+// =============================================================================
 
 generator client {
   provider = "prisma-client-js"
@@ -10,9 +11,732 @@ datasource db {
   provider = "postgresql"
 }
 
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum AccountStatus {
+  ACTIVE
+  PENDING_VERIFICATION
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum CapabilityType {
+  BUY
+  SELL
+  OFFER_SERVICES
+  HIRE_PROVIDERS
+}
+
+enum CategoryType {
+  PRODUCT
+  SERVICE
+}
+
+enum ProductCondition {
+  NEW
+  USED
+}
+
+enum ProductBadge {
+  HOT
+  BEST_DEAL
+  DISCOUNT_20
+  NEW
+}
+
+enum ProductStatus {
+  ACTIVE
+  PAUSED
+  SOLD
+  REMOVED
+}
+
+enum ServiceAvailability {
+  AVAILABLE_TODAY
+  SAME_DAY_VISIT
+  WEEKEND_AVAILABLE
+}
+
+enum ServiceStatus {
+  ACTIVE
+  PAUSED
+  REMOVED
+}
+
+enum ModerationStatus {
+  APPROVED
+  UNDER_REVIEW
+  FLAGGED
+  REMOVED
+}
+
+enum FavoriteTargetType {
+  PRODUCT
+  SERVICE
+}
+
+enum PaymentMethodType {
+  CASH_ON_DELIVERY
+  EASYPAISA
+  JAZZCASH
+}
+
+enum OrderStatus {
+  CONFIRMED_PREPARING_DISPATCH
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
+enum EnquiryKind {
+  PRODUCT
+  SERVICE
+}
+
+enum EnquiryChannel {
+  SELLER_INBOX
+  WHATSAPP
+  PHONE_CALL
+}
+
+enum EnquiryStatus {
+  OPEN
+  REPLIED
+  RESOLVED
+  CLOSED
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  PRODUCT_ENQUIRY
+  SERVICE_REQUEST
+  BOOKING_ACCEPTED
+  BOOKING_REJECTED
+  BOOKING_COMPLETED
+  ORDER_UPDATE
+  LISTING_UPDATE
+  SYSTEM
+}
+
+enum AdminRoleCode {
+  SUPER_ADMIN
+  MODERATOR
+  SUPPORT_ADMIN
+  CATALOG_ADMIN
+}
+
+enum ReportTargetType {
+  PRODUCT
+  SERVICE
+  USER
+}
+
+enum ReportStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+// =============================================================================
+// System Health Baseline (Milestone 1)
+// =============================================================================
+
 model SystemHealthMeta {
   id        String   @id @default(cuid())
   key       String   @unique
   value     String
   updatedAt DateTime @updatedAt
+
+  @@map("system_health_meta")
+}
+
+// =============================================================================
+// Users, Multi-Capability Model, & Saved Addresses
+// =============================================================================
+
+model User {
+  id               String        @id @default(cuid())
+  fullName         String
+  email            String        @unique
+  phone            String        @unique
+  passwordHash     String
+  avatarUrl        String?
+  province         String
+  city             String
+  area             String
+  accountStatus    AccountStatus @default(ACTIVE)
+  isEmailVerified  Boolean       @default(false)
+  isPhoneVerified  Boolean       @default(false)
+  sellerVerified   Boolean       @default(false)
+  providerVerified Boolean       @default(false)
+  lastLoginAt      DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // Multi-capability support on a single account
+  capabilities UserCapability[]
+  addresses    Address[]
+
+  // Marketplace ownership & customer relations
+  products         Product[]        @relation("SellerProducts")
+  services         Service[]        @relation("ProviderServices")
+  favorites        Favorite[]
+  cart             Cart?
+  orders           Order[]          @relation("BuyerOrders")
+  soldOrderItems   OrderItem[]      @relation("SellerOrderItems")
+  sentEnquiries    Enquiry[]        @relation("EnquirySender")
+  receivedEnquiries Enquiry[]       @relation("EnquiryRecipient")
+  sentMessages     Message[]        @relation("MessageSender")
+  customerBookings ServiceBooking[] @relation("BookingCustomer")
+  providerBookings ServiceBooking[] @relation("BookingProvider")
+  notifications    Notification[]
+
+  // Server-controlled Admin RBAC & Audit relationships
+  adminRoleAssignments UserAdminRole[] @relation("UserAdminAssignments")
+  grantedAdminRoles    UserAdminRole[] @relation("AdminRoleGrantor")
+  adminAuditLogs       AdminAuditLog[] @relation("AuditActor")
+
+  // Moderation & abuse reporting relationships
+  filedReports    AbuseReport[] @relation("ReportFiler")
+  reportsAgainst  AbuseReport[] @relation("ReportedUser")
+  assignedReports AbuseReport[] @relation("ReportAssignee")
+
+  @@index([city, area])
+  @@index([accountStatus])
+  @@map("users")
+}
+
+model UserCapability {
+  id          String         @id @default(cuid())
+  userId      String
+  capability  CapabilityType
+  isEnabled   Boolean        @default(true)
+  activatedAt DateTime       @default(now())
+  pausedAt    DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, capability])
+  @@index([capability, isEnabled])
+  @@map("user_capabilities")
+}
+
+model Address {
+  id            String   @id @default(cuid())
+  userId        String
+  label         String   @default("Home")
+  recipientName String
+  phone         String
+  province      String
+  city          String
+  area          String
+  streetAddress String
+  landmark      String?
+  postalCode    String?
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders   Order[]
+  bookings ServiceBooking[]
+
+  @@index([userId, isDefault])
+  @@index([city, area])
+  @@map("addresses")
+}
+
+// =============================================================================
+// Categories Taxonomy (Product & Service Categories)
+// =============================================================================
+
+model Category {
+  id          String       @id @default(cuid())
+  name        String
+  slug        String       @unique
+  type        CategoryType
+  groupName   String
+  categoryKey String?
+  description String?
+  sortOrder   Int          @default(0)
+  isActive    Boolean      @default(true)
+  parentId    String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryHierarchy")
+
+  products Product[]
+  services Service[]
+
+  @@unique([type, name])
+  @@index([type, isActive, sortOrder])
+  @@index([groupName])
+  @@map("categories")
+}
+
+// =============================================================================
+// Products & Product Images
+// =============================================================================
+
+model Product {
+  id                  String           @id @default(cuid())
+  slug                String           @unique
+  ownerId             String
+  categoryId          String
+  title               String
+  description         String
+  condition           ProductCondition @default(NEW)
+  price               Decimal          @db.Decimal(12, 2)
+  originalPrice       Decimal?         @db.Decimal(12, 2)
+  currency            String           @default("PKR") @db.VarChar(3)
+  badge               ProductBadge?
+  stock               Int              @default(1)
+  specs               String[]
+  deliveryEstimate    String
+  province            String
+  city                String
+  area                String
+  sellerPhoneSnapshot String
+  status              ProductStatus    @default(ACTIVE)
+  moderationStatus    ModerationStatus @default(APPROVED)
+  ratingAverage       Decimal          @default(0) @db.Decimal(3, 2)
+  reviewCount         Int              @default(0)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  owner    User     @relation("SellerProducts", fields: [ownerId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  images     ProductImage[]
+  favorites  Favorite[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  enquiries  Enquiry[]
+  reports    AbuseReport[]
+
+  @@index([status, moderationStatus, createdAt])
+  @@index([categoryId, status])
+  @@index([city, area, status])
+  @@index([ownerId, status])
+  @@index([price])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  altText   String?
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+  @@map("product_images")
+}
+
+// =============================================================================
+// Local Services & Service Areas
+// =============================================================================
+
+model Service {
+  id               String              @id @default(cuid())
+  slug             String              @unique
+  providerId       String
+  categoryId       String
+  title            String
+  description      String
+  serviceGroup     String
+  startingPrice    Decimal             @db.Decimal(12, 2)
+  currency         String              @default("PKR") @db.VarChar(3)
+  workingHours     String
+  availability     ServiceAvailability @default(AVAILABLE_TODAY)
+  experienceYears  Int                 @default(0)
+  contactPhone     String
+  responseTime     String
+  includedTasks    String[]
+  province         String
+  city             String
+  primaryArea      String
+  status           ServiceStatus       @default(ACTIVE)
+  moderationStatus ModerationStatus    @default(APPROVED)
+  ratingAverage    Decimal             @default(0) @db.Decimal(3, 2)
+  reviewCount      Int                 @default(0)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  provider User     @relation("ProviderServices", fields: [providerId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  serviceAreas ServiceArea[]
+  favorites    Favorite[]
+  enquiries    Enquiry[]
+  bookings     ServiceBooking[]
+  reports      AbuseReport[]
+
+  @@index([status, moderationStatus, createdAt])
+  @@index([categoryId, status])
+  @@index([city, primaryArea, status])
+  @@index([providerId, status])
+  @@index([startingPrice])
+  @@map("services")
+}
+
+model ServiceArea {
+  id        String   @id @default(cuid())
+  serviceId String
+  province  String
+  city      String
+  areaName  String
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, city, areaName])
+  @@index([city, areaName])
+  @@map("service_areas")
+}
+
+// =============================================================================
+// Favorites, Carts & Cart Items
+// =============================================================================
+
+model Favorite {
+  id         String             @id @default(cuid())
+  userId     String
+  targetType FavoriteTargetType
+  productId  String?
+  serviceId  String?
+  createdAt  DateTime           @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@unique([userId, serviceId])
+  @@index([userId, targetType, createdAt])
+  @@map("favorites")
+}
+
+model Cart {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  currency  String   @default("PKR") @db.VarChar(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id                String   @id @default(cuid())
+  cartId            String
+  productId         String
+  quantity          Int      @default(1)
+  unitPriceSnapshot Decimal  @db.Decimal(12, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@index([productId])
+  @@map("cart_items")
+}
+
+// =============================================================================
+// Orders & Order Items (COD, EasyPaisa, JazzCash)
+// =============================================================================
+
+model Order {
+  id               String            @id @default(cuid())
+  orderNumber      String            @unique
+  buyerId          String
+  addressId        String?
+  recipientName    String
+  recipientPhone   String
+  shippingProvince String
+  shippingCity     String
+  shippingAddress  String
+  paymentMethod    PaymentMethodType @default(CASH_ON_DELIVERY)
+  paymentReference String?
+  status           OrderStatus       @default(CONFIRMED_PREPARING_DISPATCH)
+  currency         String            @default("PKR") @db.VarChar(3)
+  subtotal         Decimal           @db.Decimal(12, 2)
+  deliveryFee      Decimal           @default(0) @db.Decimal(12, 2)
+  total            Decimal           @db.Decimal(12, 2)
+  notes            String?
+  deliveredAt      DateTime?
+  cancelledAt      DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  buyer   User        @relation("BuyerOrders", fields: [buyerId], references: [id], onDelete: Restrict)
+  address Address?    @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  items   OrderItem[]
+
+  @@index([buyerId, createdAt])
+  @@index([status, createdAt])
+  @@index([shippingCity])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                   String   @id @default(cuid())
+  orderId              String
+  productId            String?
+  sellerId             String?
+  productTitleSnapshot String
+  quantity             Int
+  unitPrice            Decimal  @db.Decimal(12, 2)
+  lineTotal            Decimal  @db.Decimal(12, 2)
+  createdAt            DateTime @default(now())
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  seller  User?    @relation("SellerOrderItems", fields: [sellerId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([sellerId, createdAt])
+  @@index([productId])
+  @@map("order_items")
+}
+
+// =============================================================================
+// Enquiries & Threaded Messages
+// =============================================================================
+
+model Enquiry {
+  id                  String         @id @default(cuid())
+  enquiryNumber       String         @unique
+  kind                EnquiryKind
+  productId           String?
+  serviceId           String?
+  senderId            String
+  recipientId         String
+  channel             EnquiryChannel @default(SELLER_INBOX)
+  targetTitleSnapshot String
+  senderNameSnapshot  String
+  senderPhoneSnapshot String
+  locationLabel       String
+  initialMessage      String
+  replyNote           String?
+  status              EnquiryStatus  @default(OPEN)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  product   Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  service   Service?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  sender    User      @relation("EnquirySender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User      @relation("EnquiryRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@index([senderId, createdAt])
+  @@index([recipientId, status, createdAt])
+  @@index([productId])
+  @@index([serviceId])
+  @@map("enquiries")
+}
+
+model Message {
+  id        String    @id @default(cuid())
+  enquiryId String
+  senderId  String
+  body      String
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  enquiry Enquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  sender  User    @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([enquiryId, createdAt])
+  @@index([senderId, createdAt])
+  @@map("messages")
+}
+
+// =============================================================================
+// Service Bookings
+// =============================================================================
+
+model ServiceBooking {
+  id                    String        @id @default(cuid())
+  bookingNumber         String        @unique
+  serviceId             String
+  customerId            String
+  providerId            String
+  addressId             String?
+  serviceTitleSnapshot  String
+  providerNameSnapshot  String
+  customerNameSnapshot  String
+  customerPhoneSnapshot String
+  city                  String
+  neighborhood          String
+  serviceAddress        String?
+  scheduledDate         DateTime
+  timeSlot              String
+  notes                 String?
+  quotedPrice           Decimal       @db.Decimal(12, 2)
+  currency              String        @default("PKR") @db.VarChar(3)
+  status                BookingStatus @default(PENDING)
+  providerResponseNote  String?
+  cancelledByCustomer   Boolean       @default(false)
+  completedAt           DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  customer User     @relation("BookingCustomer", fields: [customerId], references: [id], onDelete: Restrict)
+  provider User     @relation("BookingProvider", fields: [providerId], references: [id], onDelete: Restrict)
+  address  Address? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, status, createdAt])
+  @@index([providerId, status, createdAt])
+  @@index([serviceId, scheduledDate])
+  @@map("service_bookings")
+}
+
+// =============================================================================
+// Notifications
+// =============================================================================
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType @default(SYSTEM)
+  title     String
+  message   String
+  linkTo    String?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  metadata  Json?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+// =============================================================================
+// Server-Controlled Admin RBAC, Audit Logs & Governance
+// =============================================================================
+
+model AdminRole {
+  id           String        @id @default(cuid())
+  code         AdminRoleCode @unique
+  name         String
+  description  String
+  permissions  String[]
+  isSystemRole Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  assignments UserAdminRole[]
+
+  @@map("admin_roles")
+}
+
+model UserAdminRole {
+  id          String    @id @default(cuid())
+  userId      String
+  roleId      String
+  grantedById String?
+  isActive    Boolean   @default(true)
+  grantedAt   DateTime  @default(now())
+  revokedAt   DateTime?
+
+  user      User      @relation("UserAdminAssignments", fields: [userId], references: [id], onDelete: Cascade)
+  role      AdminRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  grantedBy User?     @relation("AdminRoleGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId])
+  @@index([userId, isActive])
+  @@map("user_admin_roles")
+}
+
+model AdminAuditLog {
+  id            String        @id @default(cuid())
+  actorUserId   String
+  actorRoleCode AdminRoleCode
+  action        String
+  targetType    String
+  targetId      String
+  reason        String?
+  previousState Json?
+  newState      Json?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime      @default(now())
+
+  actor User @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@map("admin_audit_logs")
+}
+
+model SupportedLocation {
+  id        String   @id @default(cuid())
+  province  String
+  city      String
+  areaName  String
+  isEnabled Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([province, city, areaName])
+  @@index([province, city, isEnabled])
+  @@map("supported_locations")
+}
+
+model AbuseReport {
+  id              String           @id @default(cuid())
+  reportNumber    String           @unique
+  reporterId      String
+  targetType      ReportTargetType
+  targetProductId String?
+  targetServiceId String?
+  targetUserId    String?
+  reason          String
+  details         String?
+  status          ReportStatus     @default(OPEN)
+  assignedAdminId String?
+  resolutionNote  String?
+  resolvedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  reporter      User     @relation("ReportFiler", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetProduct Product? @relation(fields: [targetProductId], references: [id], onDelete: SetNull)
+  targetService Service? @relation(fields: [targetServiceId], references: [id], onDelete: SetNull)
+  targetUser    User?    @relation("ReportedUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  assignedAdmin User?    @relation("ReportAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([targetType, status])
+  @@map("abuse_reports")
 }
