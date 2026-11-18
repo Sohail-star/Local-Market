@@ -17,7 +17,13 @@ import {
   Users,
 } from 'lucide-react';
 
-type AdminRoleCode = 'SUPER_ADMIN' | 'ADMIN' | 'MODERATOR' | 'SUPPORT';
+type AdminRoleCode =
+  | 'SUPER_ADMIN'
+  | 'ADMIN'
+  | 'MODERATOR'
+  | 'SUPPORT'
+  | 'SUPPORT_ADMIN'
+  | 'CATALOG_ADMIN';
 
 interface AdminSetupStatus {
   databaseConnected: boolean;
@@ -30,7 +36,7 @@ interface AdminAccountProfile {
   id: string;
   fullName: string;
   email: string;
-  phone: string;
+  phone: string | null;
   province: string;
   city: string;
   area: string;
@@ -51,7 +57,7 @@ interface AdminAccountSummary {
   id: string;
   fullName: string;
   email: string;
-  phone: string;
+  phone: string | null;
   city: string;
   accountStatus: string;
   activeSessionCount: number;
@@ -68,7 +74,7 @@ interface MarketplaceUserRecord {
   id: string;
   fullName: string;
   email: string;
-  phone: string;
+  phone: string | null;
   city: string;
   accountStatus: string;
   sellerVerified: boolean;
@@ -100,16 +106,21 @@ interface AdminAuditLogItem {
   actor?: { fullName: string; email: string };
 }
 
+const INITIAL_SUPER_ADMIN_EMAIL = 'sohailsk7882261@gmail.com';
+
 type AdminTab = 'accounts' | 'users' | 'reports' | 'audit';
 
 async function adminApiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    ...(options?.body ? { 'Content-Type': 'application/json' } : {}),
+    ...(options?.headers as Record<string, string> | undefined),
+  };
+
   const response = await fetch(url, {
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options?.headers ?? {}),
-    },
+    cache: 'no-store',
     ...options,
+    headers,
   });
 
   const payload = await response.json().catch(() => ({
@@ -140,12 +151,13 @@ export const AdminPortalPage: React.FC = () => {
   const [submittingLogin, setSubmittingLogin] = useState(false);
 
   // One-time setup state
-  const [showSetupForm, setShowSetupForm] = useState(false);
   const [setupToken, setSetupToken] = useState('');
+  const [showSetupToken, setShowSetupToken] = useState(false);
   const [setupName, setSetupName] = useState('');
-  const [setupEmail, setSetupEmail] = useState('');
+  const [setupEmail, setSetupEmail] = useState(INITIAL_SUPER_ADMIN_EMAIL);
   const [setupPhone, setSetupPhone] = useState('');
   const [setupPassword, setSetupPassword] = useState('');
+  const [showSetupPassword, setShowSetupPassword] = useState(false);
   const [submittingSetup, setSubmittingSetup] = useState(false);
 
   // Admin management data
@@ -169,6 +181,11 @@ export const AdminPortalPage: React.FC = () => {
       const status = await adminApiFetch<AdminSetupStatus>('/api/admin/auth/setup-status');
       setSetupStatus(status);
 
+      if (!status.superAdminExists) {
+        setAdmin(null);
+        return;
+      }
+
       try {
         const me = await adminApiFetch<{ admin: AdminAccountProfile }>('/api/admin/auth/me');
         setAdmin(me.admin);
@@ -176,6 +193,7 @@ export const AdminPortalPage: React.FC = () => {
         setAdmin(null);
       }
     } catch (err) {
+      setSetupStatus(null);
       setFeedback({
         type: 'error',
         text: err instanceof Error ? err.message : 'Unable to reach admin auth service.',
@@ -271,25 +289,27 @@ export const AdminPortalPage: React.FC = () => {
     setFeedback(null);
     setSubmittingSetup(true);
     try {
-      await adminApiFetch('/api/admin/auth/setup', {
+      const data = await adminApiFetch<{ admin: AdminAccountProfile }>('/api/admin/auth/setup', {
         method: 'POST',
         body: JSON.stringify({
           setupToken,
           fullName: setupName,
           email: setupEmail,
-          phone: setupPhone,
+          ...(setupPhone.trim() ? { phone: setupPhone.trim() } : {}),
           password: setupPassword,
         }),
       });
       setSetupToken('');
       setSetupPassword('');
-      setShowSetupForm(false);
-      setLoginEmail(setupEmail);
+      setLoginEmail(data.admin.email);
+      setAdmin(data.admin);
       setFeedback({
         type: 'success',
-        text: 'Initial SUPER_ADMIN created. One-time setup is now permanently locked. Please sign in below.',
+        text: 'Initial SUPER_ADMIN created and signed in securely. One-time setup is now permanently locked.',
       });
-      await loadBootstrapState();
+      adminApiFetch<AdminSetupStatus>('/api/admin/auth/setup-status')
+        .then(setSetupStatus)
+        .catch(() => {});
     } catch (err) {
       setFeedback({
         type: 'error',
@@ -422,40 +442,72 @@ export const AdminPortalPage: React.FC = () => {
         </span>
       </div>
 
-      <section className="bg-[#593B2A] text-white rounded-2xl p-5 sm:p-6 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#F5B82E]">
-            <ShieldCheck className="w-4 h-4" />
-            <span>LocalMarket Administration Portal</span>
+      <section className="bg-[#593B2A] text-white rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#F5B82E]">
+              <ShieldCheck className="w-4 h-4" />
+              <span>LocalMarket Administration Portal</span>
+            </div>
+            <h1 className="font-display text-2xl sm:text-3xl font-extrabold">
+              Server-Verified Admin Authentication & RBAC
+            </h1>
+            <p className="text-xs sm:text-sm text-[#E9D8BA] max-w-2xl">
+              Admin roles (SUPER_ADMIN, ADMIN, MODERATOR, SUPPORT) are enforced strictly on the
+              server from PostgreSQL UserAdminRole records and kept separate from ordinary user
+              marketplace capabilities.
+            </p>
           </div>
-          <h1 className="font-display text-2xl sm:text-3xl font-extrabold">
-            Server-Verified Admin Authentication & RBAC
-          </h1>
-          <p className="text-xs sm:text-sm text-[#E9D8BA] max-w-2xl">
-            Admin roles (SUPER_ADMIN, ADMIN, MODERATOR, SUPPORT) are enforced strictly on the
-            server from PostgreSQL UserAdminRole records and kept separate from ordinary user
-            marketplace capabilities.
-          </p>
+
+          {admin && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void loadBootstrapState()}
+                className="px-3 py-2 rounded-lg bg-[#6D4B38] text-xs font-semibold text-white hover:bg-[#7D5843] inline-flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Refresh</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="px-3.5 py-2 rounded-lg bg-[#F5B82E] text-xs font-bold text-[#593B2A] hover:bg-[#e5a820] inline-flex items-center gap-1.5"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {admin && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void loadAuthorizedData(admin)}
-              className="px-3 py-2 rounded-lg bg-[#6D4B38] text-xs font-semibold text-white hover:bg-[#7D5843] inline-flex items-center gap-1.5"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Refresh</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="px-3.5 py-2 rounded-lg bg-[#F5B82E] text-xs font-bold text-[#593B2A] hover:bg-[#e5a820] inline-flex items-center gap-1.5"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
-            </button>
+          <div
+            data-testid="admin-header-identity"
+            className="pt-3 border-t border-[#76523E] flex flex-wrap items-center justify-between gap-3 text-xs"
+          >
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              <span>
+                <span className="text-[#E9D8BA]">Signed in as:</span>{' '}
+                <strong className="text-white">{admin.fullName}</strong>
+              </span>
+              <span className="text-[#E9D8BA]">{admin.email}</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-1 rounded-lg bg-[#6D4B38] border border-[#8A624B] text-white font-semibold">
+                Active Role: <strong className="text-[#F5B82E]">{admin.activeRole}</strong>
+              </span>
+              {isSuperAdmin && (
+                <span
+                  data-testid="header-super-admin-badge"
+                  className="px-2.5 py-1 rounded-lg bg-[#F5B82E] text-[#2B170A] font-extrabold inline-flex items-center gap-1 shadow-xs"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>SUPER_ADMIN</span>
+                </span>
+              )}
+            </div>
           </div>
         )}
       </section>
@@ -478,192 +530,425 @@ export const AdminPortalPage: React.FC = () => {
         </div>
       ) : !admin ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          <form
-            onSubmit={handleLogin}
-            className="lg:col-span-7 bg-white rounded-2xl border border-[#EADBC2] p-6 space-y-4 shadow-xs"
-          >
-            <div className="flex items-center gap-2 text-[#593B2A]">
-              <KeyRound className="w-5 h-5 text-[#C98A09]" />
-              <h2 className="font-display text-lg font-bold">Administrator Sign In</h2>
-            </div>
-
-            {setupStatus && !setupStatus.adminAuthConfigured && (
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
-                Server admin JWT secrets (<code>ADMIN_JWT_ACCESS_SECRET</code> /{' '}
-                <code>ADMIN_JWT_REFRESH_SECRET</code> or <code>JWT_ACCESS_SECRET</code> /{' '}
-                <code>JWT_REFRESH_SECRET</code>, 32+ chars) must be configured in environment
-                secrets before admin login can issue sessions.
+          {!setupStatus ? (
+            <div className="lg:col-span-7 bg-white rounded-2xl border border-[#EADBC2] p-6 space-y-4 shadow-xs">
+              <div className="flex items-center gap-2 text-[#593B2A]">
+                <ShieldAlert className="w-5 h-5 text-[#C98A09]" />
+                <h2 className="font-display text-lg font-bold">
+                  Unable to Load Admin Setup Status
+                </h2>
               </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-[#593B2A]">
-                Administrator Email
-              </label>
-              <input
-                type="email"
-                required
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="admin@yourdomain.pk"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-sm text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
-              />
+              <p className="text-xs text-[#6E5644] leading-relaxed">
+                Could not verify whether an initial <code>SUPER_ADMIN</code> exists on the server.
+                Please retry checking <code>GET /api/admin/auth/setup-status</code>.
+              </p>
+              <button
+                type="button"
+                onClick={() => void loadBootstrapState()}
+                className="px-4 py-2.5 rounded-xl bg-[#593B2A] hover:bg-[#462E20] text-white text-xs font-bold inline-flex items-center gap-2"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry Setup Status Check</span>
+              </button>
             </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-[#593B2A]">Password</label>
-              <div className="relative">
-                <input
-                  type={showLoginPassword ? 'text' : 'password'}
-                  required
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Enter your administrator password"
-                  className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-sm text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowLoginPassword((prev) => !prev)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6E5644]"
-                  aria-label="Toggle password visibility"
-                >
-                  {showLoginPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={submittingLogin}
-              className="w-full py-2.5 px-4 rounded-xl bg-[#F5B82E] hover:bg-[#e5a820] text-[#593B2A] font-bold text-sm transition disabled:opacity-60"
-            >
-              {submittingLogin ? 'Verifying Credentials...' : 'Sign In to Admin Portal'}
-            </button>
-          </form>
-
-          <div className="lg:col-span-5 bg-white rounded-2xl border border-[#EADBC2] p-6 space-y-4 shadow-xs">
-            <div className="flex items-center gap-2 text-[#593B2A]">
-              <ShieldAlert className="w-5 h-5 text-[#C98A09]" />
-              <h2 className="font-display text-base font-bold">Security Boundaries</h2>
-            </div>
-
-            <ul className="space-y-2 text-xs text-[#6E5644] leading-relaxed list-disc pl-4">
-              <li>Admin accounts can never be created via public signup.</li>
-              <li>No default admin credentials exist in code or seed data.</li>
-              <li>
-                Only an authenticated <strong>SUPER_ADMIN</strong> can create or assign{' '}
-                <code>ADMIN</code>, <code>MODERATOR</code>, or <code>SUPPORT</code> roles.
-              </li>
-              <li>
-                All privileged mutations are recorded in PostgreSQL{' '}
-                <code>AdminAuditLog</code>.
-              </li>
-            </ul>
-
-            {setupStatus && (
-              <div className="rounded-xl bg-[#FFF9ED] border border-[#EADBC2] p-3 text-xs space-y-1 text-[#593B2A]">
-                <div>
-                  <strong>Super Admin Provisioned:</strong>{' '}
-                  {setupStatus.superAdminExists ? 'Yes (One-time setup locked)' : 'No'}
+          ) : !setupStatus.superAdminExists ? (
+            <div className="lg:col-span-7 bg-white rounded-2xl border-2 border-[#F5B82E] p-6 space-y-4 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-[#593B2A]">
+                  <ShieldCheck className="w-5 h-5 text-[#C98A09]" />
+                  <h2 className="font-display text-lg font-bold">
+                    One-Time Initial Super Admin Setup
+                  </h2>
                 </div>
-                <div>
-                  <strong>One-Time Setup Available:</strong>{' '}
-                  {setupStatus.oneTimeSetupAvailable ? 'Yes (Token configured)' : 'No'}
-                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-[#FFF9ED] border border-[#F5B82E] text-[11px] font-bold text-[#593B2A]">
+                  No SUPER_ADMIN Provisioned Yet
+                </span>
               </div>
-            )}
 
-            {setupStatus?.oneTimeSetupAvailable && (
-              <div className="space-y-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowSetupForm((prev) => !prev)}
-                  className="w-full py-2 px-3 rounded-xl border border-[#593B2A] text-[#593B2A] text-xs font-bold hover:bg-[#FFF9ED]"
-                >
-                  {showSetupForm
-                    ? 'Hide One-Time Super Admin Setup'
-                    : 'Run Protected One-Time Super Admin Setup'}
-                </button>
+              <p className="text-xs text-[#6E5644] leading-relaxed">
+                Create the initial <strong>SUPER_ADMIN</strong> account in PostgreSQL using the
+                server&apos;s protected <code>ADMIN_SETUP_TOKEN</code>. Once created, this setup
+                endpoint locks permanently and signs you in automatically using HTTP-only cookies.
+              </p>
 
-                {showSetupForm && (
-                  <form onSubmit={handleOneTimeSetup} className="space-y-2.5 pt-2 border-t border-[#EADBC2]">
+              {!setupStatus.databaseConnected ? (
+                <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-xs text-red-900">
+                  PostgreSQL database is currently disconnected. Confirm database connectivity
+                  before creating the initial Super Admin account.
+                </div>
+              ) : !setupStatus.oneTimeSetupAvailable ? (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
+                  One-time setup is currently unavailable because <code>ADMIN_SETUP_TOKEN</code>{' '}
+                  is not configured on the server.
+                </div>
+              ) : (
+                <form onSubmit={handleOneTimeSetup} className="space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="setup-full-name"
+                        className="block text-xs font-bold text-[#593B2A]"
+                      >
+                        Full Name <span className="text-red-600">*</span>
+                      </label>
+                      <input
+                        id="setup-full-name"
+                        type="text"
+                        required
+                        value={setupName}
+                        onChange={(e) => setSetupName(e.target.value)}
+                        placeholder="Sohail Khan"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-sm text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="setup-email"
+                        className="block text-xs font-bold text-[#593B2A]"
+                      >
+                        Super Admin Email <span className="text-red-600">*</span>
+                      </label>
+                      <input
+                        id="setup-email"
+                        type="email"
+                        required
+                        value={setupEmail}
+                        onChange={(e) => setSetupEmail(e.target.value)}
+                        placeholder={INITIAL_SUPER_ADMIN_EMAIL}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-sm text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="setup-phone"
+                      className="block text-xs font-bold text-[#593B2A]"
+                    >
+                      Pakistani Mobile Number{' '}
+                      <span className="font-normal text-[#6E5644]">(Optional)</span>
+                    </label>
                     <input
-                      type="password"
-                      required
-                      value={setupToken}
-                      onChange={(e) => setSetupToken(e.target.value)}
-                      placeholder="Server ADMIN_SETUP_TOKEN"
-                      className="w-full px-3 py-2 rounded-lg border border-[#EADBC2] text-xs"
-                    />
-                    <input
+                      id="setup-phone"
                       type="text"
-                      required
-                      value={setupName}
-                      onChange={(e) => setSetupName(e.target.value)}
-                      placeholder="Full Name"
-                      className="w-full px-3 py-2 rounded-lg border border-[#EADBC2] text-xs"
-                    />
-                    <input
-                      type="email"
-                      required
-                      value={setupEmail}
-                      onChange={(e) => setSetupEmail(e.target.value)}
-                      placeholder="Super Admin Email"
-                      className="w-full px-3 py-2 rounded-lg border border-[#EADBC2] text-xs"
-                    />
-                    <input
-                      type="text"
-                      required
                       value={setupPhone}
                       onChange={(e) => setSetupPhone(e.target.value)}
                       placeholder="0300-1234567"
-                      className="w-full px-3 py-2 rounded-lg border border-[#EADBC2] text-xs"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-sm text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
                     />
-                    <input
-                      type="password"
-                      required
-                      value={setupPassword}
-                      onChange={(e) => setSetupPassword(e.target.value)}
-                      placeholder="Strong password (12+ chars, Aa1!)"
-                      className="w-full px-3 py-2 rounded-lg border border-[#EADBC2] text-xs"
-                    />
-                    <button
-                      type="submit"
-                      disabled={submittingSetup}
-                      className="w-full py-2 rounded-lg bg-[#593B2A] text-white text-xs font-bold hover:bg-[#462E20]"
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="setup-password"
+                      className="block text-xs font-bold text-[#593B2A]"
                     >
-                      {submittingSetup ? 'Provisioning...' : 'Create Initial SUPER_ADMIN'}
-                    </button>
-                  </form>
-                )}
+                      Strong Password <span className="text-red-600">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="setup-password"
+                        type={showSetupPassword ? 'text' : 'password'}
+                        required
+                        minLength={12}
+                        value={setupPassword}
+                        onChange={(e) => setSetupPassword(e.target.value)}
+                        placeholder="Minimum 12 characters (A-Z, a-z, 0-9, symbol)"
+                        className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-sm text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSetupPassword((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6E5644]"
+                        aria-label="Toggle setup password visibility"
+                      >
+                        {showSetupPassword ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-[#6E5644]">
+                      Must be at least 12 characters and include uppercase, lowercase, a digit, and
+                      a special character. Hashed securely with bcryptjs.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="setup-token"
+                      className="block text-xs font-bold text-[#593B2A]"
+                    >
+                      Server <code>ADMIN_SETUP_TOKEN</code> <span className="text-red-600">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="setup-token"
+                        type={showSetupToken ? 'text' : 'password'}
+                        required
+                        value={setupToken}
+                        onChange={(e) => setSetupToken(e.target.value)}
+                        placeholder="Paste ADMIN_SETUP_TOKEN from server secrets"
+                        className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-sm text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSetupToken((prev) => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6E5644]"
+                        aria-label="Toggle setup token visibility"
+                      >
+                        {showSetupToken ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={submittingSetup || !setupStatus.adminAuthConfigured}
+                    className="w-full py-2.5 px-4 rounded-xl bg-[#593B2A] hover:bg-[#462E20] text-white font-bold text-sm transition disabled:opacity-60"
+                  >
+                    {submittingSetup
+                      ? 'Creating SUPER_ADMIN & Signing In...'
+                      : 'Create Initial SUPER_ADMIN & Sign In'}
+                  </button>
+                </form>
+              )}
+            </div>
+          ) : (
+            <form
+              onSubmit={handleLogin}
+              className="lg:col-span-7 bg-white rounded-2xl border border-[#EADBC2] p-6 space-y-4 shadow-xs"
+            >
+              <div className="flex items-center gap-2 text-[#593B2A]">
+                <KeyRound className="w-5 h-5 text-[#C98A09]" />
+                <h2 className="font-display text-lg font-bold">Administrator Sign In</h2>
               </div>
+
+              {setupStatus && !setupStatus.adminAuthConfigured && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
+                  Server admin JWT secrets (<code>ADMIN_JWT_ACCESS_SECRET</code> /{' '}
+                  <code>ADMIN_JWT_REFRESH_SECRET</code> or <code>JWT_ACCESS_SECRET</code> /{' '}
+                  <code>JWT_REFRESH_SECRET</code>, 32+ chars) must be configured in environment
+                  secrets before admin login can issue sessions.
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-[#593B2A]">
+                  Administrator Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="admin@yourdomain.pk"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-sm text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-[#593B2A]">Password</label>
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="Enter your administrator password"
+                    className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-sm text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6E5644]"
+                    aria-label="Toggle password visibility"
+                  >
+                    {showLoginPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingLogin}
+                className="w-full py-2.5 px-4 rounded-xl bg-[#F5B82E] hover:bg-[#e5a820] text-[#593B2A] font-bold text-sm transition disabled:opacity-60"
+              >
+                {submittingLogin ? 'Verifying Credentials...' : 'Sign In to Admin Portal'}
+              </button>
+            </form>
+          )}
+
+          <div className="lg:col-span-5 space-y-5">
+            {setupStatus && !setupStatus.superAdminExists && (
+              <form
+                onSubmit={handleLogin}
+                className="bg-white rounded-2xl border border-[#EADBC2] p-5 space-y-3 shadow-xs"
+              >
+                <div className="flex items-center gap-2 text-[#593B2A]">
+                  <KeyRound className="w-4 h-4 text-[#C98A09]" />
+                  <h2 className="font-display text-base font-bold">Existing Admin Sign In</h2>
+                </div>
+                <input
+                  type="email"
+                  required
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="admin@yourdomain.pk"
+                  className="w-full px-3 py-2 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-xs text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
+                />
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="Administrator password"
+                    className="w-full px-3 py-2 pr-9 rounded-xl border border-[#EADBC2] bg-[#FFF9ED] text-xs text-[#593B2A] focus:outline-none focus:ring-2 focus:ring-[#F5B82E]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword((prev) => !prev)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#6E5644]"
+                    aria-label="Toggle login password visibility"
+                  >
+                    {showLoginPassword ? (
+                      <EyeOff className="w-3.5 h-3.5" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+                <button
+                  type="submit"
+                  disabled={submittingLogin}
+                  className="w-full py-2 px-3 rounded-xl bg-[#F5B82E] hover:bg-[#e5a820] text-[#593B2A] font-bold text-xs transition disabled:opacity-60"
+                >
+                  {submittingLogin ? 'Signing In...' : 'Sign In'}
+                </button>
+              </form>
             )}
+
+            <div className="bg-white rounded-2xl border border-[#EADBC2] p-6 space-y-4 shadow-xs">
+              <div className="flex items-center gap-2 text-[#593B2A]">
+                <ShieldAlert className="w-5 h-5 text-[#C98A09]" />
+                <h2 className="font-display text-base font-bold">Security Boundaries</h2>
+              </div>
+
+              <ul className="space-y-2 text-xs text-[#6E5644] leading-relaxed list-disc pl-4">
+                <li>Admin accounts can never be created via public signup.</li>
+                <li>No default admin credentials exist in code or seed data.</li>
+                <li>
+                  Only an authenticated <strong>SUPER_ADMIN</strong> can create or assign{' '}
+                  <code>ADMIN</code>, <code>MODERATOR</code>, or <code>SUPPORT</code> roles.
+                </li>
+                <li>
+                  All privileged mutations are recorded in PostgreSQL{' '}
+                  <code>AdminAuditLog</code>.
+                </li>
+              </ul>
+
+              {setupStatus && (
+                <div className="rounded-xl bg-[#FFF9ED] border border-[#EADBC2] p-3 text-xs space-y-1 text-[#593B2A]">
+                  <div>
+                    <strong>Database Connected:</strong>{' '}
+                    {setupStatus.databaseConnected ? 'Yes' : 'No'}
+                  </div>
+                  <div>
+                    <strong>Super Admin Provisioned:</strong>{' '}
+                    {setupStatus.superAdminExists ? 'Yes (One-time setup locked)' : 'No'}
+                  </div>
+                  <div>
+                    <strong>One-Time Setup Available:</strong>{' '}
+                    {setupStatus.oneTimeSetupAvailable ? 'Yes (Token configured)' : 'No'}
+                  </div>
+                  <div>
+                    <strong>Admin Auth Secrets:</strong>{' '}
+                    {setupStatus.adminAuthConfigured ? 'Configured' : 'Missing'}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       ) : (
         <div className="space-y-5">
-          {/* Authenticated Admin Summary */}
-          <section className="bg-white rounded-2xl border border-[#EADBC2] p-5 flex flex-wrap items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="text-xs font-bold text-[#6E5644]">Authenticated Administrator</div>
+          {/* Authenticated Admin Profile Section */}
+          <section
+            data-testid="admin-profile-section"
+            className="bg-white rounded-2xl border border-[#EADBC2] p-5 flex flex-wrap items-center justify-between gap-4 shadow-xs"
+          >
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-[#6E5644]">
+                  Authenticated Administrator Profile
+                </span>
+                {isSuperAdmin && (
+                  <span
+                    data-testid="profile-super-admin-badge"
+                    className="px-2.5 py-0.5 rounded-md bg-[#F5B82E] text-[#2B170A] text-[11px] font-extrabold inline-flex items-center gap-1"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>SUPER_ADMIN</span>
+                  </span>
+                )}
+              </div>
               <div className="text-lg font-extrabold text-[#593B2A]">{admin.fullName}</div>
-              <div className="text-xs text-[#6E5644]">
-                {admin.email} · {admin.city}
+              <div className="text-xs text-[#6E5644] flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-semibold text-[#593B2A]">{admin.email}</span>
+                <span>·</span>
+                <span>
+                  {admin.city}, {admin.province}
+                </span>
+                <span>·</span>
+                <span>Status: {admin.accountStatus}</span>
+                {admin.lastLoginAt && (
+                  <>
+                    <span>·</span>
+                    <span>Last login: {new Date(admin.lastLoginAt).toLocaleString()}</span>
+                  </>
+                )}
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {admin.roles.map((role) => (
+
+            <div className="flex flex-col sm:items-end gap-2">
+              <div className="text-xs font-semibold text-[#593B2A]">
+                Active Role:{' '}
                 <span
-                  key={role}
-                  className="px-3 py-1 rounded-lg bg-[#FFF9ED] border border-[#F5B82E] text-xs font-bold text-[#593B2A]"
+                  data-testid="profile-active-role"
+                  className="px-2.5 py-1 rounded-lg bg-[#593B2A] text-[#F5B82E] font-bold ml-1"
                 >
-                  {role}
+                  {admin.activeRole}
                 </span>
-              ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-[#6E5644] font-semibold mr-1">
+                  Assigned Roles:
+                </span>
+                {admin.roles.map((role) => (
+                  <span
+                    key={role}
+                    className={`px-2.5 py-1 rounded-lg border text-xs font-bold inline-flex items-center gap-1 ${
+                      role === 'SUPER_ADMIN'
+                        ? 'bg-[#FFF3CC] border-[#C98A09] text-[#2B170A]'
+                        : 'bg-[#FFF9ED] border-[#F5B82E] text-[#593B2A]'
+                    }`}
+                  >
+                    {role === 'SUPER_ADMIN' && <ShieldCheck className="w-3.5 h-3.5 text-[#C98A09]" />}
+                    <span>{role}</span>
+                  </span>
+                ))}
+              </div>
             </div>
           </section>
 

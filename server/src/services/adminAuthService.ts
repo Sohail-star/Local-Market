@@ -52,7 +52,7 @@ export interface AdminAccountProfile {
   id: string;
   fullName: string;
   email: string;
-  phone: string;
+  phone: string | null;
   province: string;
   city: string;
   area: string;
@@ -189,11 +189,11 @@ function signAdminTokens(params: {
   return { accessToken, refreshToken };
 }
 
-export function getAdminCookieOptions(maxAgeSeconds: number) {
+export function getAdminCookieOptions(maxAgeSeconds: number, isSecure = env.isProduction) {
   return {
     httpOnly: true,
-    secure: env.isProduction,
-    sameSite: 'lax' as const,
+    secure: isSecure,
+    sameSite: (isSecure ? 'none' : 'lax') as 'none' | 'lax',
     path: '/api/admin',
     maxAge: maxAgeSeconds * 1000,
   };
@@ -349,14 +349,14 @@ export async function setupInitialSuperAdminWithToken(
     setupToken: string;
     fullName: string;
     email: string;
-    phone: string;
+    phone?: string | null;
     password: string;
     province?: string;
     city?: string;
     area?: string;
   },
   meta: RequestAuditMeta
-): Promise<{ id: string; fullName: string; email: string; role: AdminRoleCode }> {
+): Promise<AdminLoginResult> {
   const prisma = getPrismaClient();
   if (!prisma) {
     throw new AppError(503, 'PostgreSQL database is not connected.');
@@ -370,6 +370,12 @@ export async function setupInitialSuperAdminWithToken(
   if (!timingSafeStringMatch(input.setupToken.trim(), env.ADMIN_SETUP_TOKEN)) {
     throw new AppError(403, 'Invalid one-time Super Admin setup token.');
   }
+  if (!env.isAdminAuthConfigured) {
+    throw new AppError(
+      503,
+      'Admin authentication secrets are not configured in the server environment.'
+    );
+  }
 
   const passwordCheck = isStrongAdminPassword(input.password);
   if (!passwordCheck.valid) {
@@ -377,9 +383,13 @@ export async function setupInitialSuperAdminWithToken(
   }
 
   const normalizedEmail = input.email.trim().toLowerCase();
-  const normalizedPhone = normalizePakistaniPhone(input.phone);
-  if (!isValidPakistaniPhone(normalizedPhone)) {
-    throw new AppError(400, 'Enter a valid Pakistani mobile number (03XX-XXXXXXX).');
+  const rawPhone = typeof input.phone === 'string' ? input.phone.trim() : '';
+  let normalizedPhone: string | null = null;
+  if (rawPhone.length > 0) {
+    if (!isValidPakistaniPhone(rawPhone)) {
+      throw new AppError(400, 'Enter a valid Pakistani mobile number (03XX-XXXXXXX).');
+    }
+    normalizedPhone = normalizePakistaniPhone(rawPhone);
   }
 
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_SALT_ROUNDS);
@@ -411,11 +421,14 @@ export async function setupInitialSuperAdminWithToken(
       throw new AppError(409, 'An account with this email already exists.');
     }
 
-    const existingPhone = await tx.user.findUnique({ where: { phone: normalizedPhone } });
-    if (existingPhone) {
-      throw new AppError(409, 'An account with this phone number already exists.');
+    if (normalizedPhone) {
+      const existingPhone = await tx.user.findUnique({ where: { phone: normalizedPhone } });
+      if (existingPhone) {
+        throw new AppError(409, 'An account with this phone number already exists.');
+      }
     }
 
+    const now = new Date();
     const user = await tx.user.create({
       data: {
         fullName: input.fullName.trim(),
@@ -427,7 +440,8 @@ export async function setupInitialSuperAdminWithToken(
         area: input.area?.trim() || 'University Road',
         accountStatus: 'ACTIVE',
         isEmailVerified: true,
-        isPhoneVerified: true,
+        isPhoneVerified: Boolean(normalizedPhone),
+        lastLoginAt: now,
       },
     });
 
@@ -439,6 +453,28 @@ export async function setupInitialSuperAdminWithToken(
       },
     });
 
+    const sessionId = crypto.randomUUID();
+    const assignedRoles: AdminRoleCode[] = ['SUPER_ADMIN'];
+    const tokens = signAdminTokens({
+      userId: user.id,
+      sessionId,
+      activeRole: 'SUPER_ADMIN',
+      roles: assignedRoles,
+    });
+
+    const expiresAt = new Date(now.getTime() + ADMIN_REFRESH_TTL_SECONDS * 1000);
+    await tx.adminSession.create({
+      data: {
+        id: sessionId,
+        userId: user.id,
+        tokenHash: hashToken(tokens.refreshToken),
+        activeRoleCode: 'SUPER_ADMIN',
+        ipAddress: meta.ipAddress ?? null,
+        userAgent: meta.userAgent ?? null,
+        expiresAt,
+      },
+    });
+
     await recordAdminAuditLog(tx, {
       actorUserId: user.id,
       actorRoleCode: 'SUPER_ADMIN',
@@ -446,15 +482,47 @@ export async function setupInitialSuperAdminWithToken(
       targetType: 'UserAdminRole',
       targetId: user.id,
       reason: 'Initial Super Admin created via protected one-time setup token.',
-      newState: { roleCode: 'SUPER_ADMIN', method: 'ONE_TIME_SETUP_TOKEN' },
+      newState: {
+        roleCode: 'SUPER_ADMIN',
+        method: 'ONE_TIME_SETUP_TOKEN',
+        autoSignedIn: true,
+      },
+      meta,
+    });
+
+    await recordAdminAuditLog(tx, {
+      actorUserId: user.id,
+      actorRoleCode: 'SUPER_ADMIN',
+      action: 'ADMIN_LOGIN_SUCCESS',
+      targetType: 'AdminSession',
+      targetId: sessionId,
+      newState: { activeRole: 'SUPER_ADMIN', assignedRoles },
       meta,
     });
 
     return {
-      id: user.id,
-      fullName: user.fullName,
-      email: user.email,
-      role: 'SUPER_ADMIN' as AdminRoleCode,
+      admin: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        phone: user.phone,
+        province: user.province,
+        city: user.city,
+        area: user.area,
+        accountStatus: user.accountStatus,
+        activeRole: 'SUPER_ADMIN',
+        roles: assignedRoles,
+        permissions: superAdminRole.permissions,
+        ordinaryCapabilities: {
+          buy: false,
+          sell: false,
+          offerServices: false,
+          hireProviders: false,
+        },
+        lastLoginAt: now.toISOString(),
+      },
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
     };
   });
 }

@@ -14,32 +14,54 @@ export function createApiApp(): Express {
 
   app.set('trust proxy', 1);
 
-  // Security headers compatible with AI Studio preview iframe and Vite module scripts
+  // Security headers compatible with AI Studio iframe embedding, cross-origin Vite assets, and module scripts
   app.use(
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
       frameguard: false,
     })
   );
 
-  // Explicit frontend origin allowlist with credentialed cookie support
-  app.use(
-    cors({
-      origin(origin, callback) {
-        if (!origin) {
-          callback(null, true);
-          return;
-        }
-        if (env.allowedOrigins.includes(origin)) {
-          callback(null, true);
-          return;
-        }
-        callback(new Error(`Origin not allowed by CORS policy: ${origin}`));
-      },
-      credentials: true,
-    })
-  );
+  // Scope CORS strictly to /api routes so frontend HTML, Vite dev modules, and production
+  // static assets (loaded with `crossorigin` by Vite) are never blocked by Origin checks.
+  const apiCors = cors((req, callback) => {
+    const rawOrigin = req.headers.origin;
+    const origin = Array.isArray(rawOrigin) ? rawOrigin[0] : rawOrigin;
+    if (!origin) {
+      callback(null, { origin: false });
+      return;
+    }
+
+    if (env.allowedOrigins.includes(origin)) {
+      callback(null, { origin: true, credentials: true });
+      return;
+    }
+
+    // Allow genuine same-origin requests from custom/shared deployment hosts (e.g. localmarket-1.ai.studio)
+    const rawForwardedHost = req.headers['x-forwarded-host'];
+    const forwardedHost = (
+      Array.isArray(rawForwardedHost) ? rawForwardedHost[0] : rawForwardedHost
+    )
+      ?.split(',')[0]
+      ?.trim();
+    const rawHost = req.headers.host;
+    const requestHost = forwardedHost || (Array.isArray(rawHost) ? rawHost[0] : rawHost);
+    try {
+      const originUrl = new URL(origin);
+      if (requestHost && originUrl.host === requestHost) {
+        callback(null, { origin: true, credentials: true });
+        return;
+      }
+    } catch {
+      // Ignore malformed Origin header
+    }
+
+    // Disallow untrusted cross-origin API requests cleanly without throwing HTTP 500
+    callback(null, { origin: false });
+  });
 
   // Rate limiting scoped to /api routes
   const apiLimiter = rateLimit({
@@ -57,9 +79,15 @@ export function createApiApp(): Express {
   app.use(cookieParser());
   app.use(httpRequestLogger);
 
-  app.use('/api', apiLimiter, apiRouter);
+  app.use('/api/admin', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    next();
+  });
+
+  app.use('/api', apiCors, apiLimiter, apiRouter);
   app.use('/api', apiNotFoundHandler);
-  app.use(errorHandler);
+  app.use('/api', errorHandler);
 
   return app;
 }

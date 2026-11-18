@@ -26,10 +26,10 @@ const ADMIN_ROLE_VALUES = [
 ] as const;
 
 export const setupSuperAdminSchema = z.object({
-  setupToken: z.string().trim().min(16, 'Setup token is required.'),
+  setupToken: z.string().trim().min(1, 'Setup token is required.').max(256),
   fullName: z.string().trim().min(2, 'Full name is required.').max(120),
   email: z.string().trim().email('Valid email address is required.').max(160),
-  phone: z.string().trim().min(10, 'Valid Pakistani mobile number is required.').max(20),
+  phone: z.string().trim().max(20).optional().or(z.literal('')),
   password: z.string().min(12, 'Password must be at least 12 characters.').max(128),
   province: z.string().trim().max(80).optional(),
   city: z.string().trim().max(80).optional(),
@@ -43,25 +43,34 @@ export const adminLoginSchema = z.object({
 });
 
 function setAdminAuthCookies(
+  req: Request,
   res: Response,
   accessToken: string,
   refreshToken: string
 ): void {
+  const isSecure = req.secure || req.header('x-forwarded-proto') === 'https';
   res.cookie(
     ADMIN_ACCESS_COOKIE,
     accessToken,
-    getAdminCookieOptions(ADMIN_ACCESS_COOKIE_MAX_AGE)
+    getAdminCookieOptions(ADMIN_ACCESS_COOKIE_MAX_AGE, isSecure)
   );
   res.cookie(
     ADMIN_REFRESH_COOKIE,
     refreshToken,
-    getAdminCookieOptions(ADMIN_REFRESH_COOKIE_MAX_AGE)
+    getAdminCookieOptions(ADMIN_REFRESH_COOKIE_MAX_AGE, isSecure)
   );
 }
 
-function clearAdminAuthCookies(res: Response): void {
-  res.clearCookie(ADMIN_ACCESS_COOKIE, { path: '/api/admin' });
-  res.clearCookie(ADMIN_REFRESH_COOKIE, { path: '/api/admin' });
+function clearAdminAuthCookies(req: Request, res: Response): void {
+  const isSecure = req.secure || req.header('x-forwarded-proto') === 'https';
+  const baseOptions = {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: (isSecure ? 'none' : 'lax') as 'none' | 'lax',
+    path: '/api/admin',
+  };
+  res.clearCookie(ADMIN_ACCESS_COOKIE, baseOptions);
+  res.clearCookie(ADMIN_REFRESH_COOKIE, baseOptions);
 }
 
 export async function getSetupStatusHandler(
@@ -87,11 +96,14 @@ export async function setupInitialSuperAdminHandler(
       req.body,
       extractRequestAuditMeta(req)
     );
+
+    setAdminAuthCookies(req, res, result.accessToken, result.refreshToken);
+
     sendSuccess(
       res,
       201,
-      'Initial Super Admin account created. One-time setup is now permanently locked.',
-      result
+      'Initial Super Admin account created and signed in. One-time setup is now permanently locked.',
+      { admin: result.admin }
     );
   } catch (err) {
     next(err);
@@ -115,7 +127,7 @@ export async function adminLoginHandler(
       extractRequestAuditMeta(req)
     );
 
-    setAdminAuthCookies(res, result.accessToken, result.refreshToken);
+    setAdminAuthCookies(req, res, result.accessToken, result.refreshToken);
 
     sendSuccess(res, 200, 'Administrator signed in successfully.', {
       admin: result.admin,
@@ -133,7 +145,7 @@ export async function adminRefreshHandler(
   try {
     const rawRefreshToken = req.cookies?.[ADMIN_REFRESH_COOKIE];
     if (typeof rawRefreshToken !== 'string' || !rawRefreshToken.trim()) {
-      clearAdminAuthCookies(res);
+      clearAdminAuthCookies(req, res);
       sendError(res, 401, 'Administrator refresh cookie is missing.');
       return;
     }
@@ -143,13 +155,13 @@ export async function adminRefreshHandler(
       extractRequestAuditMeta(req)
     );
 
-    setAdminAuthCookies(res, result.accessToken, result.refreshToken);
+    setAdminAuthCookies(req, res, result.accessToken, result.refreshToken);
 
     sendSuccess(res, 200, 'Administrator session refreshed.', {
       admin: result.admin,
     });
   } catch (err) {
-    clearAdminAuthCookies(res);
+    clearAdminAuthCookies(req, res);
     next(err);
   }
 }
@@ -173,10 +185,10 @@ export async function adminLogoutHandler(
       meta: extractRequestAuditMeta(req),
     });
 
-    clearAdminAuthCookies(res);
+    clearAdminAuthCookies(req, res);
     sendSuccess(res, 200, 'Administrator signed out.', { signedOut: true });
   } catch (err) {
-    clearAdminAuthCookies(res);
+    clearAdminAuthCookies(req, res);
     next(err);
   }
 }
