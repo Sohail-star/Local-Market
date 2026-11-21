@@ -149,6 +149,12 @@ enum ReportStatus {
   DISMISSED
 }
 
+enum ChatMessageType {
+  TEXT
+  VOICE
+  IMAGE
+}
+
 // =============================================================================
 // System Health Baseline (Milestone 1)
 // =============================================================================
@@ -198,10 +204,12 @@ model User {
   soldOrderItems   OrderItem[]      @relation("SellerOrderItems")
   sentEnquiries    Enquiry[]        @relation("EnquirySender")
   receivedEnquiries Enquiry[]       @relation("EnquiryRecipient")
-  sentMessages     Message[]        @relation("MessageSender")
-  customerBookings ServiceBooking[] @relation("BookingCustomer")
-  providerBookings ServiceBooking[] @relation("BookingProvider")
-  notifications    Notification[]
+  sentMessages        Message[]        @relation("MessageSender")
+  buyerConversations  Conversation[]   @relation("BuyerConversations")
+  sellerConversations Conversation[]   @relation("SellerConversations")
+  customerBookings    ServiceBooking[] @relation("BookingCustomer")
+  providerBookings    ServiceBooking[] @relation("BookingProvider")
+  notifications       Notification[]
 
   // Server-controlled Admin RBAC, Sessions & Audit relationships
   adminRoleAssignments UserAdminRole[] @relation("UserAdminAssignments")
@@ -327,9 +335,10 @@ model Product {
   images     ProductImage[]
   favorites  Favorite[]
   cartItems  CartItem[]
-  orderItems OrderItem[]
-  enquiries  Enquiry[]
-  reports    AbuseReport[]
+  orderItems    OrderItem[]
+  enquiries     Enquiry[]
+  conversations Conversation[]
+  reports       AbuseReport[]
 
   @@index([status, moderationStatus, createdAt])
   @@index([categoryId, status])
@@ -389,9 +398,10 @@ model Service {
 
   serviceAreas ServiceArea[]
   favorites    Favorite[]
-  enquiries    Enquiry[]
-  bookings     ServiceBooking[]
-  reports      AbuseReport[]
+  enquiries     Enquiry[]
+  conversations Conversation[]
+  bookings      ServiceBooking[]
+  reports       AbuseReport[]
 
   @@index([status, moderationStatus, createdAt])
   @@index([categoryId, status])
@@ -563,19 +573,53 @@ model Enquiry {
   @@map("enquiries")
 }
 
-model Message {
-  id        String    @id @default(cuid())
-  enquiryId String
-  senderId  String
-  body      String
-  isRead    Boolean   @default(false)
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+model Conversation {
+  id                String   @id @default(uuid())
+  buyerId           String
+  sellerId          String
+  productId         String?
+  serviceId         String?
+  listingType       String?
+  listingRefId      String?
+  listingTitle      String?
+  listingPriceLabel String?
+  listingImageUrl   String?
+  locationLabel     String?
+  updatedAt         DateTime @updatedAt
+  createdAt         DateTime @default(now())
 
-  enquiry Enquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
-  sender  User    @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  buyer    User      @relation("BuyerConversations", fields: [buyerId], references: [id], onDelete: Cascade)
+  seller   User      @relation("SellerConversations", fields: [sellerId], references: [id], onDelete: Cascade)
+  product  Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  service  Service?  @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  messages Message[]
+
+  @@index([buyerId, updatedAt])
+  @@index([sellerId, updatedAt])
+  @@index([buyerId, sellerId, productId, serviceId])
+  @@index([buyerId, sellerId, listingRefId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String          @id @default(uuid())
+  enquiryId      String?
+  conversationId String?
+  senderId       String
+  body           String?
+  content        String?
+  messageType    ChatMessageType @default(TEXT)
+  mediaUrl       String?
+  isRead         Boolean         @default(false)
+  readAt         DateTime?
+  createdAt      DateTime        @default(now())
+
+  enquiry      Enquiry?      @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User          @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([enquiryId, createdAt])
+  @@index([conversationId, createdAt])
   @@index([senderId, createdAt])
   @@map("messages")
 }

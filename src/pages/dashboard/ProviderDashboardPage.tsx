@@ -45,13 +45,6 @@ interface ProviderDashboardPageProps {
   onReplyEnquiry: (enquiryId: string, replyNote: string) => void;
 }
 
-const PRESET_SERVICE_IMAGES: { label: string; src: string }[] = [
-  { label: 'Mechanic', src: '/src/assets/images/service_car_mechanic_1794892675044.jpg' },
-  { label: 'Electrician', src: '/src/assets/images/service_electrician_1794892674934.jpg' },
-  { label: 'Plumber', src: '/src/assets/images/service_plumber_1794892675350.jpg' },
-  { label: 'Tailor', src: '/src/assets/images/service_tailor_1794892676094.jpg' },
-];
-
 function groupForCategory(cat: ServiceCategoryLabel): {
   group: ServiceGroupName;
   key: CategoryFilterId;
@@ -112,15 +105,15 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
   // Service Form State
   const [title, setTitle] = useState('');
   const [categoryName, setCategoryName] = useState<ServiceCategoryLabel>('Electrician');
-  const [startingPrice, setStartingPrice] = useState('500');
-  const [workingHours, setWorkingHours] = useState('Mon–Sat · 9:00 AM – 8:00 PM');
+  const [startingPrice, setStartingPrice] = useState('');
+  const [workingHours, setWorkingHours] = useState('');
   const [availability, setAvailability] = useState<ServiceAvailability>('Available Today');
   const [province, setProvince] = useState<ProvinceName>(() => getProvinceForCity(user.city));
   const [city, setCity] = useState<CityName>(user.city);
   const [area, setArea] = useState<string>(user.area);
-  const [serviceAreasText, setServiceAreasText] = useState(`${user.area}, Hayatabad Phase 3`);
+  const [serviceAreasText, setServiceAreasText] = useState('');
   const [description, setDescription] = useState('');
-  const [imageSrc, setImageSrc] = useState(PRESET_SERVICE_IMAGES[1].src);
+  const [images, setImages] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
 
@@ -165,15 +158,15 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
     setEditingId(null);
     setTitle('');
     setCategoryName('Electrician');
-    setStartingPrice('500');
-    setWorkingHours('Mon–Sat · 9:00 AM – 8:00 PM');
+    setStartingPrice('');
+    setWorkingHours('');
     setAvailability('Available Today');
     setProvince(getProvinceForCity(user.city));
     setCity(user.city);
     setArea(user.area);
-    setServiceAreasText(`${user.area}, Saddar Bazaar`);
+    setServiceAreasText('');
     setDescription('');
-    setImageSrc(PRESET_SERVICE_IMAGES[1].src);
+    setImages([]);
     setFormError(null);
     setFormOpen(true);
   };
@@ -190,26 +183,36 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
     setArea(srv.area);
     setServiceAreasText(srv.serviceAreas.join(', '));
     setDescription(srv.description);
-    setImageSrc(srv.image);
+    setImages(
+      srv.galleryImages && srv.galleryImages.length > 0
+        ? srv.galleryImages
+        : srv.image
+          ? [srv.image]
+          : []
+    );
     setFormError(null);
     setFormOpen(true);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) {
-      setFormError('Service photo must be a valid image under 2 MB.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setImageSrc(reader.result);
-        setFormError(null);
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    Array.from(fileList).forEach((file) => {
+      if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) {
+        setFormError('Service photos must be valid images under 2 MB.');
+        return;
       }
-    };
-    reader.readAsDataURL(file);
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          const src = reader.result;
+          setImages((prev) => [...prev, src]);
+          setFormError(null);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
   };
 
   const handleSaveService = (e: React.FormEvent) => {
@@ -219,8 +222,12 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
       setFormError('Service title is required.');
       return;
     }
-    if (!Number.isFinite(numericPrice) || numericPrice < 100) {
+    if (!startingPrice.trim() || !Number.isFinite(numericPrice) || numericPrice < 100) {
       setFormError('Starting price must be at least Rs. 100.');
+      return;
+    }
+    if (images.length === 0) {
+      setFormError('Please upload at least one service photo before publishing.');
       return;
     }
 
@@ -238,6 +245,7 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
       .filter(Boolean);
     const finalAreas = parsedAreas.length > 0 ? parsedAreas : [resolvedArea];
     const groupMeta = groupForCategory(categoryName);
+    const primaryImage = images[0];
 
     if (editingId) {
       const existing = myServices.find((s) => s.id === editingId);
@@ -256,7 +264,8 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
           area: resolvedArea,
           serviceAreas: finalAreas,
           description: description.trim() || existing.description,
-          image: imageSrc,
+          image: primaryImage,
+          galleryImages: images,
         });
       }
     } else {
@@ -273,19 +282,20 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
         city: resolvedCity,
         area: resolvedArea,
         serviceAreas: finalAreas,
-        workingHours: workingHours.trim() || 'Mon–Sat · 9:00 AM – 8:00 PM',
+        workingHours: workingHours.trim() || 'By appointment',
         availability,
         providerName: user.name,
         providerVerified: true,
-        experienceYears: 5,
+        experienceYears: 1,
         phone: user.phone,
-        responseTime: 'Arrives in 30 mins',
+        responseTime: 'Responds promptly',
         description:
           description.trim() ||
           `Professional ${categoryName} services in ${resolvedCity}.`,
         includedTasks: ['Onsite Inspection', 'Clear Estimate', 'Quality Service'],
         sampleReviews: [],
-        image: imageSrc,
+        image: primaryImage,
+        galleryImages: images,
         ownerId: user.id,
         status: 'Active',
       };
@@ -411,7 +421,7 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
             </p>
           )}
 
-          <form onSubmit={handleSaveService} className="space-y-4">
+          <form onSubmit={handleSaveService} noValidate className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-[#382619] mb-1">
@@ -421,7 +431,10 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
                   type="text"
                   required
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (formError) setFormError(null);
+                  }}
                   placeholder="e.g. Home Solar & Inverter Setup"
                   className="w-full rounded-xl border border-[#D8C5A5] px-3 py-2 text-sm focus:outline-none focus:border-[#593B2A]"
                 />
@@ -453,7 +466,11 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
                   required
                   min={100}
                   value={startingPrice}
-                  onChange={(e) => setStartingPrice(e.target.value)}
+                  onChange={(e) => {
+                    setStartingPrice(e.target.value);
+                    if (formError) setFormError(null);
+                  }}
+                  placeholder="e.g. 500"
                   className="w-full rounded-xl border border-[#D8C5A5] px-3 py-2 text-sm tabular-nums focus:outline-none"
                 />
               </div>
@@ -466,7 +483,7 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
                   type="text"
                   value={workingHours}
                   onChange={(e) => setWorkingHours(e.target.value)}
-                  placeholder="Mon–Sat · 9:00 AM – 8:00 PM"
+                  placeholder="e.g. Mon–Sat · 9:00 AM – 8:00 PM"
                   className="w-full rounded-xl border border-[#D8C5A5] px-3 py-2 text-sm focus:outline-none"
                 />
               </div>
@@ -504,48 +521,70 @@ export const ProviderDashboardPage: React.FC<ProviderDashboardPageProps> = ({
                   type="text"
                   value={serviceAreasText}
                   onChange={(e) => setServiceAreasText(e.target.value)}
-                  placeholder="University Road, Hayatabad Phase 3, Saddar Bazaar"
+                  placeholder="e.g. University Road, Hayatabad Phase 3, Saddar Bazaar"
                   className="w-full rounded-lg border border-[#D8C5A5] bg-white px-3 py-2 text-xs focus:outline-none"
                 />
               </div>
             </div>
 
-            {/* Service Images */}
+            {/* Service Photos Upload */}
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="text-xs font-bold text-[#382619]">Service Image</label>
+                <label className="text-xs font-bold text-[#382619]">Service Photos *</label>
                 <label className="px-3 py-1.5 rounded-lg border border-[#D8C5A5] bg-[#FFF9ED] hover:bg-[#FFF2D6] text-xs font-bold text-[#593B2A] inline-flex items-center gap-1.5 cursor-pointer">
                   <Camera className="w-3.5 h-3.5" />
                   <span>Upload Photo</span>
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={handleImageUpload}
                     className="sr-only"
                   />
                 </label>
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="w-24 h-16 rounded-lg overflow-hidden border border-[#EADBC2] bg-[#FFF9ED]">
-                  <SmartImage src={imageSrc} alt="Service preview" className="w-full h-full object-cover" />
-                </div>
-                <div className="flex flex-wrap gap-1.5 text-[11px]">
-                  {PRESET_SERVICE_IMAGES.map((preset) => (
-                    <button
-                      key={preset.label}
-                      type="button"
-                      onClick={() => setImageSrc(preset.src)}
-                      className={`px-2.5 py-1 rounded-md border font-semibold cursor-pointer ${
-                        imageSrc === preset.src
-                          ? 'border-[#593B2A] bg-[#F5B82E] text-[#382619]'
-                          : 'border-[#EADBC2] bg-[#FFF9ED] text-[#593B2A]'
-                      }`}
+
+              {images.length === 0 ? (
+                <label className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#D8C5A5] bg-[#FFF9ED] px-4 py-6 text-center cursor-pointer hover:bg-[#FFF2D6] transition-colors">
+                  <Camera className="w-6 h-6 text-[#593B2A]" />
+                  <span className="text-xs font-bold text-[#382619]">
+                    Click &ldquo;Upload Photo&rdquo; to add your service portfolio photos
+                  </span>
+                  <span className="text-[11px] text-[#6F5643]">
+                    Upload one or more PNG, JPG, or WebP images (max 2 MB each)
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageUpload}
+                    className="sr-only"
+                  />
+                </label>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {images.map((img, idx) => (
+                    <div
+                      key={`${idx}-${img.slice(0, 24)}`}
+                      className="relative w-24 h-16 rounded-lg overflow-hidden border border-[#EADBC2] bg-[#FFF9ED]"
                     >
-                      {preset.label}
-                    </button>
+                      <SmartImage
+                        src={img}
+                        alt="Service preview"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setImages((prev) => prev.filter((_, i) => i !== idx))}
+                        className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/65 text-white flex items-center justify-center cursor-pointer"
+                        aria-label="Remove photo"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
                   ))}
                 </div>
-              </div>
+              )}
             </div>
 
             <div>

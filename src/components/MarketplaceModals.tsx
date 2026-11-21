@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Camera,
   CheckCircle2,
   Headphones,
   PackageCheck,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 import { getProvinceForCity } from '../data/locations';
 import { CITIES, CITY_NEIGHBORHOODS } from '../data/marketplaceData';
+import { apiLoginUser, apiRegisterUser } from '../services/authApi';
 import {
   CategoryFilterId,
   CityName,
@@ -34,17 +36,6 @@ interface SellerListingModalProps {
   onCreateProduct: (product: Product) => void;
 }
 
-const PRODUCT_IMAGE_BY_CAT: Record<ProductCategoryName, string> = {
-  Mobiles: '/src/assets/images/product_smartphone_pro_1794892673559.jpg',
-  Laptops: '/src/assets/images/product_dell_laptop_1794892673214.jpg',
-  Furniture: '/src/assets/images/product_office_chair_1794892674328.jpg',
-  Electronics: '/src/assets/images/product_wireless_headphones_1794892674408.jpg',
-  Vehicles: '/src/assets/images/service_car_mechanic_1794892675044.jpg',
-  Fashion: '/src/assets/images/service_tailor_1794892676094.jpg',
-  'Home Appliances': '/src/assets/images/product_office_chair_1794892674328.jpg',
-  Property: '/src/assets/images/hero_peshawar_marketplace_1794892673024.jpg',
-};
-
 export const SellerListingModal: React.FC<SellerListingModalProps> = ({
   open,
   onClose,
@@ -55,21 +46,68 @@ export const SellerListingModal: React.FC<SellerListingModalProps> = ({
   const [category, setCategory] = useState<ProductCategoryName>('Mobiles');
   const [condition, setCondition] = useState<'New' | 'Used'>('New');
   const [price, setPrice] = useState('');
+  const [stock, setStock] = useState('');
   const [city, setCity] = useState<Exclude<CityName, 'All Cities'>>(
     defaultCity === 'All Cities' ? 'Peshawar' : defaultCity
   );
   const [area, setArea] = useState('');
   const [sellerName, setSellerName] = useState('');
   const [description, setDescription] = useState('');
+  const [images, setImages] = useState<string[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
 
   if (!open) return null;
 
   const areas = CITY_NEIGHBORHOODS[city] || ['City Center'];
   const selectedArea = area || areas[0];
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    Array.from(fileList).forEach((file) => {
+      if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) {
+        setFormError('Images must be valid image files under 2 MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          const src = reader.result;
+          setImages((prev) => [...prev, src]);
+          setFormError(null);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const numericPrice = Math.max(100, Number(price) || 5000);
+    const numericPrice = Number(price);
+    const numericStock = Number(stock);
+
+    if (!title.trim()) {
+      setFormError('Product title is required.');
+      return;
+    }
+    if (!price.trim() || !Number.isFinite(numericPrice) || numericPrice < 50) {
+      setFormError('Enter a valid PKR price of at least Rs. 50.');
+      return;
+    }
+    if (!stock.trim() || !Number.isFinite(numericStock) || numericStock < 1) {
+      setFormError('Enter a valid stock quantity of at least 1.');
+      return;
+    }
+    if (!sellerName.trim()) {
+      setFormError('Shop / Seller name is required.');
+      return;
+    }
+    if (images.length === 0) {
+      setFormError('Please upload at least one product image before publishing.');
+      return;
+    }
+
     const newProduct: Product = {
       id: `prod-${Date.now()}`,
       title: title.trim(),
@@ -82,7 +120,7 @@ export const SellerListingModal: React.FC<SellerListingModalProps> = ({
       province: getProvinceForCity(city),
       city,
       area: selectedArea,
-      sellerName: sellerName.trim() || 'Local Verified Merchant',
+      sellerName: sellerName.trim(),
       sellerMemberSince: '2026',
       sellerVerified: true,
       sellerPhone: '+92 300 0000000',
@@ -90,15 +128,19 @@ export const SellerListingModal: React.FC<SellerListingModalProps> = ({
         description.trim() ||
         'Fresh local listing posted on LocalMarket with Cash on Delivery and local pickup.',
       specs: [`Condition: ${condition}`, `Area: ${selectedArea}`, `City: ${city}`, 'COD Eligible'],
-      image: PRODUCT_IMAGE_BY_CAT[category],
-      galleryImages: [PRODUCT_IMAGE_BY_CAT[category]],
-      stock: 10,
+      image: images[0],
+      galleryImages: images,
+      stock: Math.max(1, Math.floor(numericStock)),
       deliveryEstimate: `Same-day local pickup in ${city}`,
     };
     onCreateProduct(newProduct);
     setTitle('');
     setPrice('');
+    setStock('');
+    setSellerName('');
     setDescription('');
+    setImages([]);
+    setFormError(null);
     onClose();
   };
 
@@ -111,7 +153,7 @@ export const SellerListingModal: React.FC<SellerListingModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-[#EADBC2] overflow-hidden"
+        className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-[#EADBC2]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-4 bg-[#593B2A] text-white flex items-center justify-between">
@@ -129,20 +171,29 @@ export const SellerListingModal: React.FC<SellerListingModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-3.5">
+        <form onSubmit={handleSubmit} noValidate className="p-5 space-y-3.5">
+          {formError && (
+            <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs font-semibold text-[#B42318]">
+              {formError}
+            </p>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-[#382619] mb-1">Product Title *</label>
             <input
               type="text"
               required
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                if (formError) setFormError(null);
+              }}
               placeholder="e.g. HP EliteBook 840 G9 or Wooden Study Desk"
               className="w-full rounded-lg border border-[#D8C5A5] px-3 py-2 text-sm focus:outline-none focus:border-[#593B2A]"
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <div>
               <label className="block text-xs font-bold text-[#382619] mb-1">Category</label>
               <select
@@ -175,11 +226,29 @@ export const SellerListingModal: React.FC<SellerListingModalProps> = ({
               <label className="block text-xs font-bold text-[#382619] mb-1">Price (PKR) *</label>
               <input
                 type="number"
-                min={100}
+                min={50}
                 required
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="45000"
+                onChange={(e) => {
+                  setPrice(e.target.value);
+                  if (formError) setFormError(null);
+                }}
+                placeholder="e.g. 25000"
+                className="w-full rounded-lg border border-[#D8C5A5] px-2.5 py-2 text-xs tabular-nums focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[#382619] mb-1">Stock Qty *</label>
+              <input
+                type="number"
+                min={1}
+                required
+                value={stock}
+                onChange={(e) => {
+                  setStock(e.target.value);
+                  if (formError) setFormError(null);
+                }}
+                placeholder="e.g. 1"
                 className="w-full rounded-lg border border-[#D8C5A5] px-2.5 py-2 text-xs tabular-nums focus:outline-none"
               />
             </div>
@@ -227,10 +296,68 @@ export const SellerListingModal: React.FC<SellerListingModalProps> = ({
               type="text"
               required
               value={sellerName}
-              onChange={(e) => setSellerName(e.target.value)}
+              onChange={(e) => {
+                setSellerName(e.target.value);
+                if (formError) setFormError(null);
+              }}
               placeholder="e.g. Saddar Electronics"
               className="w-full rounded-lg border border-[#D8C5A5] px-3 py-2 text-sm focus:outline-none"
             />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-bold text-[#382619]">Product Images *</label>
+              <label className="px-3 py-1.5 rounded-lg border border-[#D8C5A5] bg-[#FFF9ED] hover:bg-[#FFF2D6] text-xs font-bold text-[#593B2A] inline-flex items-center gap-1.5 cursor-pointer">
+                <Camera className="w-3.5 h-3.5" />
+                <span>Upload Image</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageUpload}
+                  className="sr-only"
+                />
+              </label>
+            </div>
+
+            {images.length === 0 ? (
+              <label className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[#D8C5A5] bg-[#FFF9ED] px-4 py-5 text-center cursor-pointer hover:bg-[#FFF2D6] transition-colors">
+                <Camera className="w-5 h-5 text-[#593B2A]" />
+                <span className="text-xs font-bold text-[#382619]">
+                  Click &ldquo;Upload Image&rdquo; to add real product photos
+                </span>
+                <span className="text-[11px] text-[#6F5643]">
+                  PNG, JPG, or WebP up to 2 MB each
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageUpload}
+                  className="sr-only"
+                />
+              </label>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {images.map((img, idx) => (
+                  <div
+                    key={`${idx}-${img.slice(0, 24)}`}
+                    className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#EADBC2] bg-[#FFF9ED]"
+                  >
+                    <img src={img} alt="Product upload preview" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setImages((prev) => prev.filter((_, i) => i !== idx))}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/65 text-white flex items-center justify-center cursor-pointer"
+                      aria-label="Remove image"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -275,17 +402,6 @@ interface ProviderListingModalProps {
   onCreateService: (service: ServiceItem) => void;
 }
 
-const SERVICE_IMAGE_BY_KEY: Record<string, string> = {
-  mechanic: '/src/assets/images/service_car_mechanic_1794892675044.jpg',
-  electrician: '/src/assets/images/service_electrician_1794892674934.jpg',
-  plumber: '/src/assets/images/service_plumber_1794892675350.jpg',
-  tailor: '/src/assets/images/service_tailor_1794892676094.jpg',
-  carpenter: '/src/assets/images/service_tailor_1794892676094.jpg',
-  'ac-technician': '/src/assets/images/service_electrician_1794892674934.jpg',
-  'home-services': '/src/assets/images/service_electrician_1794892674934.jpg',
-  'tech-services': '/src/assets/images/service_electrician_1794892674934.jpg',
-};
-
 const GROUP_FOR_KEY: Record<string, { label: ServiceCategoryLabel; group: ServiceGroupName }> = {
   mechanic: { label: 'Mechanic', group: 'Vehicle Services' },
   electrician: { label: 'Electrician', group: 'Home Services' },
@@ -305,13 +421,15 @@ export const ProviderListingModal: React.FC<ProviderListingModalProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [categoryKey, setCategoryKey] = useState<CategoryFilterId>('mechanic');
-  const [startingPrice, setStartingPrice] = useState('500');
+  const [startingPrice, setStartingPrice] = useState('');
   const [city, setCity] = useState<Exclude<CityName, 'All Cities'>>(
     defaultCity === 'All Cities' ? 'Peshawar' : defaultCity
   );
   const [area, setArea] = useState('');
   const [providerName, setProviderName] = useState('');
   const [description, setDescription] = useState('');
+  const [images, setImages] = useState<string[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
 
   if (!open) return null;
 
@@ -319,40 +437,81 @@ export const ProviderListingModal: React.FC<ProviderListingModalProps> = ({
   const selectedArea = area || areas[0];
   const meta = GROUP_FOR_KEY[categoryKey] || GROUP_FOR_KEY.mechanic;
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    Array.from(fileList).forEach((file) => {
+      if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) {
+        setFormError('Service photos must be valid images under 2 MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          const src = reader.result;
+          setImages((prev) => [...prev, src]);
+          setFormError(null);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const numericPrice = Number(startingPrice);
+    if (!title.trim()) {
+      setFormError('Service title is required.');
+      return;
+    }
+    if (!startingPrice.trim() || !Number.isFinite(numericPrice) || numericPrice < 100) {
+      setFormError('Starting rate must be at least Rs. 100.');
+      return;
+    }
+    if (!providerName.trim()) {
+      setFormError('Business / Ustad name is required.');
+      return;
+    }
+    if (images.length === 0) {
+      setFormError('Please upload at least one service photo before publishing.');
+      return;
+    }
+
     const newService: ServiceItem = {
       id: `srv-${Date.now()}`,
       title: title.trim(),
       categoryName: meta.label,
       serviceGroup: meta.group,
       categoryKey,
-      startingPrice: Math.max(100, Number(startingPrice) || 500),
+      startingPrice: numericPrice,
       rating: 5.0,
       reviewCount: 1,
       province: getProvinceForCity(city),
       city,
       area: selectedArea,
-      serviceAreas: [selectedArea, ...areas.slice(0, 2)].filter(
-        (v, i, arr) => arr.indexOf(v) === i
-      ),
-      workingHours: 'Mon–Sat · 9:00 AM – 8:00 PM',
+      serviceAreas: [selectedArea],
+      workingHours: 'By appointment',
       availability: 'Available Today',
-      providerName: providerName.trim() || 'Verified Local Pro',
+      providerName: providerName.trim(),
       providerVerified: true,
-      experienceYears: 5,
+      experienceYears: 1,
       phone: '+92 300 0000000',
-      responseTime: 'Arrives in 30 mins',
+      responseTime: 'Responds promptly',
       description:
         description.trim() || 'Experienced, background-verified local technician ready to serve.',
       includedTasks: ['Onsite Inspection', 'Transparent Estimate', 'Quality Guarantee'],
       sampleReviews: [],
-      image: SERVICE_IMAGE_BY_KEY[categoryKey] || SERVICE_IMAGE_BY_KEY.mechanic,
+      image: images[0],
+      galleryImages: images,
     };
     onCreateService(newService);
     setTitle('');
+    setStartingPrice('');
     setProviderName('');
     setDescription('');
+    setImages([]);
+    setFormError(null);
     onClose();
   };
 
@@ -365,7 +524,7 @@ export const ProviderListingModal: React.FC<ProviderListingModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-[#EADBC2] overflow-hidden"
+        className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-[#EADBC2]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-4 bg-[#F5B82E] text-[#382619] flex items-center justify-between">
@@ -383,7 +542,13 @@ export const ProviderListingModal: React.FC<ProviderListingModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-3.5">
+        <form onSubmit={handleSubmit} noValidate className="p-5 space-y-3.5">
+          {formError && (
+            <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs font-semibold text-[#B42318]">
+              {formError}
+            </p>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-[#382619] mb-1">
               Service Title *
@@ -392,7 +557,10 @@ export const ProviderListingModal: React.FC<ProviderListingModalProps> = ({
               type="text"
               required
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                if (formError) setFormError(null);
+              }}
               placeholder="e.g. AC & Inverter Technician or Car Mechanic"
               className="w-full rounded-lg border border-[#D8C5A5] px-3 py-2 text-sm focus:outline-none"
             />
@@ -425,7 +593,11 @@ export const ProviderListingModal: React.FC<ProviderListingModalProps> = ({
                 min={100}
                 required
                 value={startingPrice}
-                onChange={(e) => setStartingPrice(e.target.value)}
+                onChange={(e) => {
+                  setStartingPrice(e.target.value);
+                  if (formError) setFormError(null);
+                }}
+                placeholder="e.g. 500"
                 className="w-full rounded-lg border border-[#D8C5A5] px-3 py-2 text-sm tabular-nums focus:outline-none"
               />
             </div>
@@ -473,10 +645,68 @@ export const ProviderListingModal: React.FC<ProviderListingModalProps> = ({
               type="text"
               required
               value={providerName}
-              onChange={(e) => setProviderName(e.target.value)}
+              onChange={(e) => {
+                setProviderName(e.target.value);
+                if (formError) setFormError(null);
+              }}
               placeholder="e.g. Bilal Cooling & Repair"
               className="w-full rounded-lg border border-[#D8C5A5] px-3 py-2 text-sm focus:outline-none"
             />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-bold text-[#382619]">Service Photos *</label>
+              <label className="px-3 py-1.5 rounded-lg border border-[#D8C5A5] bg-[#FFF9ED] hover:bg-[#FFF2D6] text-xs font-bold text-[#593B2A] inline-flex items-center gap-1.5 cursor-pointer">
+                <Camera className="w-3.5 h-3.5" />
+                <span>Upload Photo</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageUpload}
+                  className="sr-only"
+                />
+              </label>
+            </div>
+
+            {images.length === 0 ? (
+              <label className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[#D8C5A5] bg-[#FFF9ED] px-4 py-5 text-center cursor-pointer hover:bg-[#FFF2D6] transition-colors">
+                <Camera className="w-5 h-5 text-[#593B2A]" />
+                <span className="text-xs font-bold text-[#382619]">
+                  Click &ldquo;Upload Photo&rdquo; to add service portfolio photos
+                </span>
+                <span className="text-[11px] text-[#6F5643]">
+                  PNG, JPG, or WebP up to 2 MB each
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageUpload}
+                  className="sr-only"
+                />
+              </label>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {images.map((img, idx) => (
+                  <div
+                    key={`${idx}-${img.slice(0, 24)}`}
+                    className="relative w-20 h-16 rounded-lg overflow-hidden border border-[#EADBC2] bg-[#FFF9ED]"
+                  >
+                    <img src={img} alt="Service upload preview" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setImages((prev) => prev.filter((_, i) => i !== idx))}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/65 text-white flex items-center justify-center cursor-pointer"
+                      aria-label="Remove photo"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -531,32 +761,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [city, setCity] = useState<Exclude<CityName, 'All Cities'>>('Peshawar');
   const [role, setRole] = useState<UserAccount['role']>('Buyer');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   if (!mode) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const areas = CITY_NEIGHBORHOODS[city] || ['City Center'];
-    onAuthenticate({
-      id: `usr-${Date.now()}`,
-      name: mode === 'signup' ? name.trim() : email.split('@')[0] || 'Local User',
-      email: email.trim(),
-      phone: '0300-0000000',
-      province: getProvinceForCity(city),
-      city,
-      area: areas[0],
-      capabilities: {
-        buy: true,
-        sell: role === 'Seller',
-        offerServices: role === 'Service Provider',
-        hireProviders: true,
-      },
-      role,
-      memberSince: 'Nov 2026',
-    });
-    onClose();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const areas = CITY_NEIGHBORHOODS[city] || ['City Center'];
+      const account =
+        mode === 'login'
+          ? await apiLoginUser(email.trim(), password)
+          : await apiRegisterUser({
+              fullName: name.trim(),
+              email: email.trim(),
+              password,
+              province: getProvinceForCity(city),
+              city,
+              area: areas[0],
+              capabilities: {
+                buy: true,
+                sell: role === 'Seller',
+                offerServices: role === 'Service Provider',
+                hireProviders: true,
+              },
+            });
+      onAuthenticate(account);
+      setPassword('');
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -589,6 +832,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-3.5">
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs font-semibold text-[#B42318]">
+              {error}
+            </div>
+          )}
+
           {mode === 'signup' && (
             <div>
               <label className="block text-xs font-bold text-[#382619] mb-1">Full Name *</label>
@@ -621,6 +870,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               type="password"
               required
               minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="Minimum 6 characters"
               className="w-full rounded-lg border border-[#D8C5A5] px-3 py-2 text-sm focus:outline-none"
             />
@@ -659,9 +910,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           <button
             type="submit"
-            className="w-full py-2.5 rounded-lg bg-[#593B2A] hover:bg-[#3B2518] text-white text-sm font-bold cursor-pointer"
+            disabled={submitting}
+            className="w-full py-2.5 rounded-lg bg-[#593B2A] hover:bg-[#3B2518] disabled:opacity-60 text-white text-sm font-bold cursor-pointer"
           >
-            {mode === 'login' ? 'Sign In' : 'Create Account'}
+            {submitting
+              ? 'Please wait...'
+              : mode === 'login'
+                ? 'Sign In'
+                : 'Create Account'}
           </button>
 
           <p className="text-center text-xs text-[#6F5643] pt-1">

@@ -63,10 +63,10 @@ export function createApiApp(): Express {
     callback(null, { origin: false });
   });
 
-  // Rate limiting scoped to /api routes
+  // Rate limiting scoped to /api routes (generous enough for polling inbox/chat safely)
   const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 300,
+    limit: 1200,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     handler(_req, res) {
@@ -74,12 +74,12 @@ export function createApiApp(): Express {
     },
   });
 
-  app.use(express.json({ limit: '2mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+  app.use(express.json({ limit: '8mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '8mb' }));
   app.use(cookieParser());
   app.use(httpRequestLogger);
 
-  app.use('/api/admin', (_req, res, next) => {
+  app.use(['/api/admin', '/api/auth', '/api/chat'], (_req, res, next) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     next();

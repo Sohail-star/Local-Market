@@ -153,6 +153,7 @@ export interface ServiceItem {
   includedTasks: string[];
   sampleReviews: SampleReview[];
   image: string;
+  galleryImages?: string[];
   ownerId?: string;
   status?: 'Active' | 'Paused';
 }

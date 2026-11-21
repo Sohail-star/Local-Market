@@ -1,5 +1,23 @@
 import { Router } from 'express';
 import {
+  createAdminCategoryHandler,
+  createAdminLocationHandler,
+  createCategorySchema,
+  createLocationSchema,
+  listAdminCategoriesHandler,
+  listAdminLocationsHandler,
+  listAdminProductsHandler,
+  listAdminServicesHandler,
+  updateAdminCategoryHandler,
+  updateAdminLocationHandler,
+  updateAdminProductStatusHandler,
+  updateAdminServiceStatusHandler,
+  updateCategorySchema,
+  updateLocationSchema,
+  updateProductStatusSchema,
+  updateServiceStatusSchema,
+} from '../controllers/adminMarketplaceController.ts';
+import {
   createAdminAccountSchema,
   createOrAssignAdminAccountHandler,
   listAbuseReportsHandler,
@@ -70,6 +88,73 @@ adminRoutes.patch(
   requireAdminRoles('SUPER_ADMIN', 'ADMIN', 'SUPPORT'),
   validateRequest({ body: updateUserVerificationSchema }),
   updateUserVerificationHandler
+);
+
+// Marketplace catalog & listings governance
+adminRoutes.get(
+  '/marketplace/products',
+  requireAdminRoles('SUPER_ADMIN', 'ADMIN', 'MODERATOR'),
+  listAdminProductsHandler
+);
+
+adminRoutes.patch(
+  '/marketplace/products/:id/status',
+  requireAdminRoles('SUPER_ADMIN', 'ADMIN', 'MODERATOR'),
+  validateRequest({ body: updateProductStatusSchema }),
+  updateAdminProductStatusHandler
+);
+
+adminRoutes.get(
+  '/marketplace/services',
+  requireAdminRoles('SUPER_ADMIN', 'ADMIN', 'MODERATOR'),
+  listAdminServicesHandler
+);
+
+adminRoutes.patch(
+  '/marketplace/services/:id/status',
+  requireAdminRoles('SUPER_ADMIN', 'ADMIN', 'MODERATOR'),
+  validateRequest({ body: updateServiceStatusSchema }),
+  updateAdminServiceStatusHandler
+);
+
+adminRoutes.get(
+  '/marketplace/categories',
+  requireAdminRoles('SUPER_ADMIN', 'ADMIN', 'MODERATOR'),
+  listAdminCategoriesHandler
+);
+
+adminRoutes.post(
+  '/marketplace/categories',
+  requireAdminRoles('SUPER_ADMIN', 'ADMIN'),
+  validateRequest({ body: createCategorySchema }),
+  createAdminCategoryHandler
+);
+
+adminRoutes.patch(
+  '/marketplace/categories/:id',
+  requireAdminRoles('SUPER_ADMIN', 'ADMIN'),
+  validateRequest({ body: updateCategorySchema }),
+  updateAdminCategoryHandler
+);
+
+adminRoutes.get(
+  '/marketplace/locations',
+  requireAdminRoles('SUPER_ADMIN', 'ADMIN', 'MODERATOR'),
+  listAdminLocationsHandler
+);
+
+adminRoutes.post(
+  '/marketplace/locations',
+  requireAdminRoles('SUPER_ADMIN', 'ADMIN'),
+  validateRequest({ body: createLocationSchema }),
+  createAdminLocationHandler
+);
+
+adminRoutes.patch(
+  '/marketplace/locations/:id',
+  requireAdminRoles('SUPER_ADMIN', 'ADMIN'),
+  validateRequest({ body: updateLocationSchema }),
+  updateAdminLocationHandler
 );
 
 // Moderation & abuse reports

@@ -9,6 +9,7 @@ import {
   Heart,
   MapPin,
   MessageCircle,
+  MessageSquare,
   Phone,
   ShieldCheck,
   Star,
@@ -16,7 +17,8 @@ import {
 } from 'lucide-react';
 import { EnquiryModal, EnquiryTarget, SubmittedEnquiryPayload } from '../components/EnquiryModals';
 import { SmartImage } from '../components/SmartImage';
-import { ServiceItem } from '../types/marketplace';
+import { startOrFindConversation } from '../services/chatApi';
+import { ServiceItem, UserAccount } from '../types/marketplace';
 
 interface ServiceProfilePageProps {
   services: ServiceItem[];
@@ -24,6 +26,7 @@ interface ServiceProfilePageProps {
   onToggleFavoriteService: (id: string) => void;
   onContactService: (service: ServiceItem) => void;
   onRecordEnquiry?: (payload: SubmittedEnquiryPayload) => void;
+  user?: UserAccount | null;
 }
 
 export const ServiceProfilePage: React.FC<ServiceProfilePageProps> = ({
@@ -32,10 +35,13 @@ export const ServiceProfilePage: React.FC<ServiceProfilePageProps> = ({
   onToggleFavoriteService,
   onContactService,
   onRecordEnquiry,
+  user,
 }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [enquiryTarget, setEnquiryTarget] = useState<EnquiryTarget | null>(null);
+  const [startingChat, setStartingChat] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
 
   const service = services.find((s) => s.id === id);
 
@@ -209,6 +215,58 @@ export const ServiceProfilePage: React.FC<ServiceProfilePageProps> = ({
               </p>
             </div>
 
+            {chatError && (
+              <p className="text-xs font-semibold text-[#B42318] bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {chatError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              disabled={startingChat}
+              onClick={async () => {
+                setChatError(null);
+                if (!user) {
+                  navigate(`/login?redirect=${encodeURIComponent(`/services/${service.id}`)}`);
+                  return;
+                }
+                setStartingChat(true);
+                try {
+                  const res = await startOrFindConversation({
+                    sellerId: service.ownerId,
+                    serviceId: service.id,
+                    listingType: 'SERVICE',
+                    listingRefId: service.id,
+                    listingTitle: service.title,
+                    listingPriceLabel: `From Rs. ${service.startingPrice.toLocaleString('en-PK')}`,
+                    listingImageUrl: service.image,
+                    locationLabel: `${service.area}, ${service.city}`,
+                    sellerName: service.providerName,
+                    sellerPhone: service.phone,
+                    sellerCity: service.city,
+                    sellerArea: service.area,
+                    sellerProvince: service.province,
+                  });
+                  navigate(`/messages?chatId=${encodeURIComponent(res.conversation.id)}`);
+                } catch (err) {
+                  const status = (err as Error & { status?: number })?.status;
+                  if (status === 401) {
+                    navigate(`/login?redirect=${encodeURIComponent(`/services/${service.id}`)}`);
+                    return;
+                  }
+                  setChatError(
+                    err instanceof Error ? err.message : 'Unable to start chat with provider.'
+                  );
+                } finally {
+                  setStartingChat(false);
+                }
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-[#593B2A] hover:bg-[#3B2518] disabled:opacity-60 text-white text-sm font-extrabold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            >
+              <MessageSquare className="w-4 h-4 text-[#F5B82E]" />
+              <span>{startingChat ? 'Opening Chat...' : 'Chat with Provider'}</span>
+            </button>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <button
                 type="button"
@@ -222,9 +280,9 @@ export const ServiceProfilePage: React.FC<ServiceProfilePageProps> = ({
                     locationLabel: `${service.area}, ${service.city}`,
                   })
                 }
-                className="py-3 px-4 rounded-xl bg-[#593B2A] hover:bg-[#3B2518] text-white text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-2 cursor-pointer"
+                className="py-3 px-4 rounded-xl bg-[#FFF9ED] border border-[#D8C5A5] hover:bg-[#FFF2D6] text-[#382619] text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-2 cursor-pointer"
               >
-                <Phone className="w-4 h-4 text-[#F5B82E]" />
+                <Phone className="w-4 h-4 text-[#593B2A]" />
                 <span>Call Now</span>
               </button>
 

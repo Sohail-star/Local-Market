@@ -49,13 +49,6 @@ const PRODUCT_CATEGORIES: ProductCategoryName[] = [
   'Property',
 ];
 
-const PRESET_PRODUCT_IMAGES: { label: string; src: string }[] = [
-  { label: 'Smartphone', src: '/src/assets/images/product_smartphone_pro_1794892673559.jpg' },
-  { label: 'Laptop', src: '/src/assets/images/product_dell_laptop_1794892673214.jpg' },
-  { label: 'Office Chair', src: '/src/assets/images/product_office_chair_1794892674328.jpg' },
-  { label: 'Headphones', src: '/src/assets/images/product_wireless_headphones_1794892674408.jpg' },
-];
-
 export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
   user,
   onActivateSellerCapability,
@@ -75,14 +68,14 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<ProductCategoryName>('Mobiles');
   const [condition, setCondition] = useState<'New' | 'Used'>('New');
-  const [price, setPrice] = useState('25000');
-  const [stock, setStock] = useState('5');
+  const [price, setPrice] = useState('');
+  const [stock, setStock] = useState('');
   const [listingStatus, setListingStatus] = useState<ListingStatus>('Active');
   const [province, setProvince] = useState<ProvinceName>(() => getProvinceForCity(user.city));
   const [city, setCity] = useState<CityName>(user.city);
   const [area, setArea] = useState<string>(user.area);
   const [description, setDescription] = useState('');
-  const [images, setImages] = useState<string[]>([PRESET_PRODUCT_IMAGES[0].src]);
+  const [images, setImages] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
 
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -126,14 +119,14 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
     setTitle('');
     setCategory('Mobiles');
     setCondition('New');
-    setPrice('25000');
-    setStock('5');
+    setPrice('');
+    setStock('');
     setListingStatus('Active');
     setProvince(getProvinceForCity(user.city));
     setCity(user.city);
     setArea(user.area);
     setDescription('');
-    setImages([PRESET_PRODUCT_IMAGES[0].src]);
+    setImages([]);
     setFormError(null);
     setFormOpen(true);
   };
@@ -153,7 +146,9 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
     setImages(
       product.galleryImages && product.galleryImages.length > 0
         ? product.galleryImages
-        : [product.image]
+        : product.image
+          ? [product.image]
+          : []
     );
     setFormError(null);
     setFormOpen(true);
@@ -172,21 +167,33 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
         if (typeof reader.result === 'string') {
           const src = reader.result;
           setImages((prev) => [...prev, src]);
+          setFormError(null);
         }
       };
       reader.readAsDataURL(file);
     });
+    e.target.value = '';
   };
 
   const handleSaveProduct = (e: React.FormEvent) => {
     e.preventDefault();
     const numericPrice = Number(price);
+    const numericStock = Number(stock);
+
     if (!title.trim()) {
       setFormError('Product title is required.');
       return;
     }
-    if (!Number.isFinite(numericPrice) || numericPrice < 50) {
+    if (!price.trim() || !Number.isFinite(numericPrice) || numericPrice < 50) {
       setFormError('Enter a valid PKR price of at least Rs. 50.');
+      return;
+    }
+    if (!stock.trim() || !Number.isFinite(numericStock) || numericStock < 1) {
+      setFormError('Enter a valid stock quantity of at least 1.');
+      return;
+    }
+    if (images.length === 0) {
+      setFormError('Please upload at least one product image before publishing.');
       return;
     }
 
@@ -198,7 +205,7 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
         : area;
     const resolvedProvince =
       province === 'All Provinces' ? getProvinceForCity(resolvedCity) : province;
-    const primaryImage = images[0] || PRESET_PRODUCT_IMAGES[0].src;
+    const primaryImage = images[0];
 
     if (editingId) {
       const existing = myProducts.find((p) => p.id === editingId);
@@ -209,14 +216,14 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
           category,
           condition,
           price: numericPrice,
-          stock: Math.max(1, Number(stock) || 1),
+          stock: Math.max(1, Math.floor(numericStock)),
           status: listingStatus,
           province: resolvedProvince,
           city: resolvedCity,
           area: resolvedArea,
           description: description.trim() || existing.description,
           image: primaryImage,
-          galleryImages: images.length > 0 ? images : [primaryImage],
+          galleryImages: images,
         });
       }
     } else {
@@ -241,8 +248,8 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
           `Listed by ${user.name} in ${resolvedArea}, ${resolvedCity}.`,
         specs: [`Condition: ${condition}`, `${resolvedArea}, ${resolvedCity}`, 'Local Pickup / COD'],
         image: primaryImage,
-        galleryImages: images.length > 0 ? images : [primaryImage],
-        stock: Math.max(1, Number(stock) || 1),
+        galleryImages: images,
+        stock: Math.max(1, Math.floor(numericStock)),
         deliveryEstimate: `Same-day pickup in ${resolvedCity}`,
         ownerId: user.id,
         status: listingStatus,
@@ -357,7 +364,7 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
             </p>
           )}
 
-          <form onSubmit={handleSaveProduct} className="space-y-4">
+          <form onSubmit={handleSaveProduct} noValidate className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-[#382619] mb-1">
@@ -367,7 +374,10 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
                   type="text"
                   required
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (formError) setFormError(null);
+                  }}
                   placeholder="e.g. HP ProBook 450 G9 Core i5"
                   className="w-full rounded-xl border border-[#D8C5A5] px-3 py-2 text-sm focus:outline-none focus:border-[#593B2A]"
                 />
@@ -427,18 +437,27 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
                   required
                   min={50}
                   value={price}
-                  onChange={(e) => setPrice(e.target.value)}
+                  onChange={(e) => {
+                    setPrice(e.target.value);
+                    if (formError) setFormError(null);
+                  }}
+                  placeholder="e.g. 25000"
                   className="w-full rounded-xl border border-[#D8C5A5] px-3 py-2 text-sm tabular-nums focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#382619] mb-1">Stock Qty</label>
+                <label className="block text-xs font-bold text-[#382619] mb-1">Stock Qty *</label>
                 <input
                   type="number"
+                  required
                   min={1}
                   value={stock}
-                  onChange={(e) => setStock(e.target.value)}
+                  onChange={(e) => {
+                    setStock(e.target.value);
+                    if (formError) setFormError(null);
+                  }}
+                  placeholder="e.g. 1"
                   className="w-full rounded-xl border border-[#D8C5A5] px-3 py-2 text-sm tabular-nums focus:outline-none"
                 />
               </div>
@@ -457,10 +476,10 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
               />
             </div>
 
-            {/* Product Images Picker + Upload */}
+            {/* Product Images Upload */}
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="text-xs font-bold text-[#382619]">Product Images</label>
+                <label className="text-xs font-bold text-[#382619]">Product Images *</label>
                 <label className="px-3 py-1.5 rounded-lg border border-[#D8C5A5] bg-[#FFF9ED] hover:bg-[#FFF2D6] text-xs font-bold text-[#593B2A] inline-flex items-center gap-1.5 cursor-pointer">
                   <Camera className="w-3.5 h-3.5" />
                   <span>Upload Image</span>
@@ -474,14 +493,31 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
                 </label>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {images.map((img, idx) => (
-                  <div
-                    key={`${idx}-${img.slice(0, 24)}`}
-                    className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#EADBC2] bg-[#FFF9ED]"
-                  >
-                    <SmartImage src={img} alt="Preview" className="w-full h-full object-cover" />
-                    {images.length > 1 && (
+              {images.length === 0 ? (
+                <label className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#D8C5A5] bg-[#FFF9ED] px-4 py-6 text-center cursor-pointer hover:bg-[#FFF2D6] transition-colors">
+                  <Camera className="w-6 h-6 text-[#593B2A]" />
+                  <span className="text-xs font-bold text-[#382619]">
+                    Click &ldquo;Upload Image&rdquo; to add your product photos
+                  </span>
+                  <span className="text-[11px] text-[#6F5643]">
+                    Upload one or more PNG, JPG, or WebP images (max 2 MB each)
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageUpload}
+                    className="sr-only"
+                  />
+                </label>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {images.map((img, idx) => (
+                    <div
+                      key={`${idx}-${img.slice(0, 24)}`}
+                      className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#EADBC2] bg-[#FFF9ED]"
+                    >
+                      <SmartImage src={img} alt="Preview" className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => setImages((prev) => prev.filter((_, i) => i !== idx))}
@@ -490,28 +526,10 @@ export const SellerDashboardPage: React.FC<SellerDashboardPageProps> = ({
                       >
                         <X className="w-3 h-3" />
                       </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#6F5643]">
-                <span>Demo presets:</span>
-                {PRESET_PRODUCT_IMAGES.map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() =>
-                      setImages((prev) =>
-                        prev.includes(preset.src) ? prev : [...prev, preset.src]
-                      )
-                    }
-                    className="px-2 py-0.5 rounded border border-[#EADBC2] bg-[#FFF9ED] hover:bg-[#FFF2D6] font-semibold text-[#382619] cursor-pointer"
-                  >
-                    + {preset.label}
-                  </button>
-                ))}
-              </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>

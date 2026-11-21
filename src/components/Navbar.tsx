@@ -11,6 +11,7 @@ import {
   LogIn,
   LogOut,
   Menu,
+  MessageSquare,
   PackageCheck,
   Search,
   ShoppingBag,
@@ -38,6 +39,7 @@ interface NavbarProps {
   onOpenSellerModal: () => void;
   onOpenSupport: (mode: 'help' | 'contact') => void;
   ordersAndBookingsCount: number;
+  unreadMessagesCount?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -53,6 +55,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSellerModal,
   onOpenSupport,
   ordersAndBookingsCount,
+  unreadMessagesCount = 0,
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -370,6 +373,27 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
+          {user && (
+            <Link
+              to="/messages"
+              className={`relative h-9 px-2.5 rounded-lg border flex items-center gap-1.5 transition-colors shrink-0 whitespace-nowrap ${
+                isActive('/messages')
+                  ? 'border-[#593B2A] bg-[#F5B82E] text-[#382619]'
+                  : 'border-[#EADBC2] bg-[#FFF9ED] hover:bg-[#FFF2D6] text-[#382619]'
+              }`}
+              aria-label={`Messages (${unreadMessagesCount} unread)`}
+              title="Messages Inbox"
+            >
+              <MessageSquare className="w-4 h-4 text-[#593B2A]" />
+              <span className="hidden xl:inline text-xs font-semibold">Messages</span>
+              {unreadMessagesCount > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#593B2A] text-[#F5B82E] text-[10px] font-bold flex items-center justify-center tabular-nums">
+                  {unreadMessagesCount}
+                </span>
+              )}
+            </Link>
+          )}
+
           {user ? (
             <div className="relative hidden sm:block" ref={userRef}>
               <button
@@ -396,6 +420,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </p>
                   </div>
 
+                  <Link
+                    to="/messages"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="px-3.5 py-2 text-xs font-bold text-[#382619] hover:bg-[#FFF9ED] flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-[#593B2A]" />
+                      <span>Messages</span>
+                    </span>
+                    {unreadMessagesCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-[#F5B82E] text-[#382619] text-[10px] font-extrabold tabular-nums">
+                        {unreadMessagesCount}
+                      </span>
+                    )}
+                  </Link>
                   <Link
                     to="/dashboard"
                     onClick={() => setUserMenuOpen(false)}
@@ -594,15 +633,30 @@ export const Navbar: React.FC<NavbarProps> = ({
               </Link>
             </div>
           ) : (
-            <div className="pt-2 border-t border-[#F3E9D7] flex items-center justify-between gap-2">
-              <Link
-                to="/dashboard"
-                onClick={() => setMobileMenuOpen(false)}
-                className="px-3.5 py-2 rounded-lg bg-[#F5B82E] text-[#382619] text-xs font-extrabold inline-flex items-center gap-1.5"
-              >
-                <LayoutDashboard className="w-3.5 h-3.5" />
-                <span>{user.name} · Dashboard</span>
-              </Link>
+            <div className="pt-2 border-t border-[#F3E9D7] flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  to="/messages"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="px-3.5 py-2 rounded-lg bg-[#593B2A] text-white text-xs font-bold inline-flex items-center gap-1.5"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-[#F5B82E]" />
+                  <span>Messages</span>
+                  {unreadMessagesCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-[#F5B82E] text-[#382619] text-[10px] font-extrabold tabular-nums">
+                      {unreadMessagesCount}
+                    </span>
+                  )}
+                </Link>
+                <Link
+                  to="/dashboard"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="px-3.5 py-2 rounded-lg bg-[#F5B82E] text-[#382619] text-xs font-extrabold inline-flex items-center gap-1.5"
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  <span>{user.name} · Dashboard</span>
+                </Link>
+              </div>
               <button
                 type="button"
                 onClick={() => {

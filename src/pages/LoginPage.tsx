@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowRight,
@@ -14,8 +14,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { DEMO_USER_ACCOUNT } from '../data/dashboardSeed';
-import { getProvinceForCity } from '../data/locations';
-import { CITY_NEIGHBORHOODS } from '../data/marketplaceData';
+import { apiLoginDemoUser, apiLoginUser } from '../services/authApi';
 import { CityName, UserAccount } from '../types/marketplace';
 
 interface LoginPageProps {
@@ -23,20 +22,28 @@ interface LoginPageProps {
   onAuthenticate: (account: UserAccount, rememberMe: boolean) => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ defaultCity, onAuthenticate }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onAuthenticate }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectPath = searchParams.get('redirect');
+  const safeRedirect =
+    redirectPath && redirectPath.startsWith('/') && !redirectPath.startsWith('//')
+      ? redirectPath
+      : '/dashboard';
+
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
 
   const [forgotOpen, setForgotOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState('');
   const [resetSent, setResetSent] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedId = identifier.trim();
     if (!trimmedId) {
@@ -51,48 +58,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ defaultCity, onAuthenticat
     setError(null);
     setIsSubmitting(true);
 
-    window.setTimeout(() => {
-      const fallbackCity: Exclude<CityName, 'All Cities'> =
-        defaultCity === 'All Cities' ? 'Peshawar' : defaultCity;
-      const areas = CITY_NEIGHBORHOODS[fallbackCity] || ['University Road'];
-      const isPhone = /^[0-9+\-\s]{7,}$/.test(trimmedId);
-      const inferredName = isPhone
-        ? 'LocalMarket Member'
-        : trimmedId
-            .split('@')[0]
-            .replace(/[._-]/g, ' ')
-            .replace(/\b\w/g, (ch) => ch.toUpperCase()) || 'LocalMarket Member';
-
-      const account: UserAccount =
-        trimmedId.toLowerCase() === DEMO_USER_ACCOUNT.email
-          ? DEMO_USER_ACCOUNT
-          : {
-              id: `usr-${Date.now()}`,
-              name: inferredName,
-              email: isPhone ? 'member@localmarket.pk' : trimmedId,
-              phone: isPhone ? trimmedId : '0300-9123456',
-              province: getProvinceForCity(fallbackCity),
-              city: fallbackCity,
-              area: areas[0],
-              capabilities: {
-                buy: true,
-                sell: true,
-                offerServices: true,
-                hireProviders: true,
-              },
-              role: 'Buyer',
-              memberSince: 'Nov 2026',
-            };
-
+    try {
+      const account = await apiLoginUser(trimmedId, password);
       onAuthenticate(account, rememberMe);
+      navigate(safeRedirect);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in right now.');
+    } finally {
       setIsSubmitting(false);
-      navigate('/dashboard');
-    }, 240);
+    }
   };
 
-  const handleDemoSignIn = () => {
-    onAuthenticate(DEMO_USER_ACCOUNT, true);
-    navigate('/dashboard');
+  const handleDemoSignIn = async () => {
+    setError(null);
+    setIsDemoLoading(true);
+    try {
+      const account = await apiLoginDemoUser();
+      onAuthenticate(account, true);
+      navigate(safeRedirect);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Demo sign-in failed.');
+    } finally {
+      setIsDemoLoading(false);
+    }
   };
 
   const handleForgotSubmit = (e: React.FormEvent) => {
@@ -115,14 +103,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ defaultCity, onAuthenticat
               One Account for Buying, Selling &amp; Services
             </h1>
             <p className="text-xs sm:text-sm text-[#E9D8BA] leading-relaxed">
-              Sign in once to shop local products, manage your own store listings, offer skilled
-              services, and track booking requests from a unified dashboard.
+              Sign in once to shop local products, chat directly with sellers &amp; providers,
+              manage your own store listings, and track booking requests.
             </p>
 
             <div className="pt-2 space-y-2.5 text-xs text-[#F7EAD2]">
               <div className="flex items-start gap-2.5">
                 <CheckCircle2 className="w-4 h-4 text-[#F5B82E] shrink-0 mt-0.5" />
-                <span>Customer Hub: Favorites, orders, enquiries &amp; service requests</span>
+                <span>Real-Time Messaging: Chat &amp; send voice notes with sellers</span>
               </div>
               <div className="flex items-start gap-2.5">
                 <CheckCircle2 className="w-4 h-4 text-[#F5B82E] shrink-0 mt-0.5" />
@@ -138,18 +126,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ defaultCity, onAuthenticat
           <div className="rounded-xl bg-black/20 border border-white/10 p-4 space-y-2.5">
             <div className="flex items-center gap-2 text-xs font-bold text-[#F5B82E]">
               <Sparkles className="w-4 h-4" />
-              <span>Quick Frontend Demo Account</span>
+              <span>Quick Demo Marketplace Account</span>
             </div>
             <p className="text-[11px] text-[#E9D8BA] leading-relaxed">
-              Test all Customer, Seller, and Service Provider dashboards immediately using our
-              pre-seeded Peshawar demo account ({DEMO_USER_ACCOUNT.name}).
+              Test chat, voice notes, and all Customer, Seller, and Service Provider dashboards
+              immediately using our Peshawar demo account ({DEMO_USER_ACCOUNT.name}).
             </p>
             <button
               type="button"
               onClick={handleDemoSignIn}
-              className="w-full py-2.5 px-4 rounded-xl bg-[#F5B82E] hover:bg-[#E5A71D] text-[#382619] text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+              disabled={isDemoLoading}
+              className="w-full py-2.5 px-4 rounded-xl bg-[#F5B82E] hover:bg-[#E5A71D] disabled:opacity-60 text-[#382619] text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <span>Sign In with Demo Account</span>
+              <span>{isDemoLoading ? 'Signing In...' : 'Sign In with Demo Account'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -170,9 +159,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ defaultCity, onAuthenticat
             <div className="rounded-xl bg-[#FFF9ED] border border-[#EADBC2] px-3.5 py-2.5 flex items-start gap-2.5 text-[11px] text-[#5C432D]">
               <Info className="w-4 h-4 text-[#593B2A] shrink-0 mt-0.5" />
               <span>
-                Frontend preview authentication: passwords are validated locally and never stored in{' '}
-                <code className="font-mono">localStorage</code>. Real auth connects in the backend
-                phase.
+                Secured with HTTP-only JWT sessions. Sign in to message sellers, send voice notes,
+                and access your dashboards.
               </span>
             </div>
 

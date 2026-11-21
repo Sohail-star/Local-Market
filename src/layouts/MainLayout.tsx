@@ -66,6 +66,7 @@ interface MainLayoutProps {
   toastMessage: string | null;
   onDismissToast: () => void;
   onSocialClick: (network: string) => void;
+  unreadMessagesCount?: number;
 }
 
 export const MainLayout: React.FC<MainLayoutProps> = ({
@@ -110,6 +111,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   toastMessage,
   onDismissToast,
   onSocialClick,
+  unreadMessagesCount = 0,
 }) => {
   const cartCount = cart.reduce((sum, i) => sum + i.quantity, 0);
 
@@ -138,6 +140,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
         onOpenSellerModal={onOpenSellerModal}
         onOpenSupport={onOpenSupport}
         ordersAndBookingsCount={orders.length + bookings.length}
+        unreadMessagesCount={unreadMessagesCount}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-5">

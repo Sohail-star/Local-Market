@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowRight,
@@ -21,6 +21,7 @@ import { LocationSelector } from '../components/LocationSelector';
 import { UserAvatar } from '../components/UserAvatar';
 import { ProvinceName, getProvinceForCity } from '../data/locations';
 import { CITY_NEIGHBORHOODS } from '../data/marketplaceData';
+import { apiRegisterUser } from '../services/authApi';
 import { CityName, UserAccount, UserCapabilities } from '../types/marketplace';
 
 interface SignupPageProps {
@@ -30,6 +31,13 @@ interface SignupPageProps {
 
 export const SignupPage: React.FC<SignupPageProps> = ({ defaultCity, onAuthenticate }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectPath = searchParams.get('redirect');
+  const safeRedirect =
+    redirectPath && redirectPath.startsWith('/') && !redirectPath.startsWith('//')
+      ? redirectPath
+      : '/dashboard';
+
   const initialCity: Exclude<CityName, 'All Cities'> =
     defaultCity === 'All Cities' ? 'Peshawar' : defaultCity;
 
@@ -56,6 +64,7 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultCity, onAuthentic
   });
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -82,7 +91,7 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultCity, onAuthentic
     setCapabilities((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim()) {
       setError('Please enter your full name.');
@@ -121,6 +130,7 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultCity, onAuthentic
     }
 
     setError(null);
+    setIsSubmitting(true);
     const resolvedCity: Exclude<CityName, 'All Cities'> =
       city === 'All Cities' ? 'Peshawar' : city;
     const resolvedArea =
@@ -130,28 +140,25 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultCity, onAuthentic
     const resolvedProvince =
       province === 'All Provinces' ? getProvinceForCity(resolvedCity) : province;
 
-    const primaryRole: UserAccount['role'] = capabilities.offerServices
-      ? 'Service Provider'
-      : capabilities.sell
-      ? 'Seller'
-      : 'Buyer';
-
-    const newAccount: UserAccount = {
-      id: `usr-${Date.now()}`,
-      name: fullName.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      province: resolvedProvince,
-      city: resolvedCity,
-      area: resolvedArea,
-      avatarUrl: avatarPreview || undefined,
-      capabilities,
-      role: primaryRole,
-      memberSince: 'Nov 2026',
-    };
-
-    onAuthenticate(newAccount, true);
-    navigate('/dashboard');
+    try {
+      const account = await apiRegisterUser({
+        fullName: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        password,
+        province: resolvedProvince,
+        city: resolvedCity,
+        area: resolvedArea,
+        avatarUrl: avatarPreview || undefined,
+        capabilities,
+      });
+      onAuthenticate(account, true);
+      navigate(safeRedirect);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to create account right now.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const capabilityCards: {
@@ -474,9 +481,10 @@ export const SignupPage: React.FC<SignupPageProps> = ({ defaultCity, onAuthentic
 
             <button
               type="submit"
-              className="px-6 py-3 rounded-xl bg-[#F5B82E] hover:bg-[#E5A71D] text-[#382619] text-sm font-extrabold inline-flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+              disabled={isSubmitting}
+              className="px-6 py-3 rounded-xl bg-[#F5B82E] hover:bg-[#E5A71D] disabled:opacity-60 text-[#382619] text-sm font-extrabold inline-flex items-center justify-center gap-2 shrink-0 cursor-pointer"
             >
-              <span>Create Account</span>
+              <span>{isSubmitting ? 'Creating Account...' : 'Create Account'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

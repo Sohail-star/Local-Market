@@ -24,10 +24,13 @@ import { CategoriesPage } from './pages/CategoriesPage';
 import { FavoritesPage } from './pages/FavoritesPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
+import { MessagesPage } from './pages/MessagesPage';
 import { ProductDetailPage } from './pages/ProductDetailPage';
 import { ServiceProfilePage } from './pages/ServiceProfilePage';
 import { ServicesPage } from './pages/ServicesPage';
 import { SignupPage } from './pages/SignupPage';
+import { apiFetchCurrentUser, apiLoginDemoUser, apiLogoutUser } from './services/authApi';
+import { fetchConversations } from './services/chatApi';
 import { AccountProfilePage } from './pages/dashboard/AccountProfilePage';
 import { BookingsManagementPage } from './pages/dashboard/BookingsManagementPage';
 import { CustomerDashboardPage } from './pages/dashboard/CustomerDashboardPage';
@@ -167,8 +170,47 @@ function AppRoutes() {
     ...INITIAL_NOTIFICATIONS,
   ]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void apiFetchCurrentUser().then((serverUser) => {
+      if (!active) return;
+      if (serverUser) {
+        setUser(serverUser);
+        saveSessionProfile(serverUser, true);
+      } else {
+        setUser(null);
+        saveSessionProfile(null, false);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setUnreadMessagesCount(0);
+      return;
+    }
+    let active = true;
+    const refreshUnread = () => {
+      void fetchConversations()
+        .then((res) => {
+          if (active) setUnreadMessagesCount(res.totalUnreadCount);
+        })
+        .catch(() => undefined);
+    };
+    refreshUnread();
+    const timer = window.setInterval(refreshUnread, 10000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [user]);
 
   useEffect(() => {
     try {
@@ -215,7 +257,9 @@ function AppRoutes() {
   };
 
   const handleLogout = () => {
+    void apiLogoutUser();
     setUser(null);
+    setUnreadMessagesCount(0);
     saveSessionProfile(null, false);
     showToast('Signed out of LocalMarket');
     navigate('/');
@@ -553,6 +597,7 @@ function AppRoutes() {
             onSocialClick={(network) =>
               showToast(`LocalMarket ${network} community page (demo link)`)
             }
+            unreadMessagesCount={unreadMessagesCount}
           />
         }
       >
@@ -613,7 +658,11 @@ function AppRoutes() {
               user={user}
               unreadNotificationsCount={unreadNotifsCount}
               pendingBookingsCount={pendingBookingsCount}
-              onDemoSignIn={() => handleAuthenticate(DEMO_USER_ACCOUNT, true)}
+              onDemoSignIn={() => {
+                void apiLoginDemoUser()
+                  .then((account) => handleAuthenticate(account, true))
+                  .catch(() => handleAuthenticate(DEMO_USER_ACCOUNT, true));
+              }}
               onLogout={handleLogout}
             />
           }
@@ -833,6 +882,16 @@ function AppRoutes() {
         />
 
         <Route
+          path="/messages"
+          element={
+            <MessagesPage
+              user={user}
+              onUnreadCountChange={setUnreadMessagesCount}
+            />
+          }
+        />
+
+        <Route
           path="/products/:id"
           element={
             <ProductDetailPage
@@ -842,6 +901,7 @@ function AppRoutes() {
               onAddToCart={handleAddToCart}
               onOpenCart={() => setCartOpen(true)}
               onRecordEnquiry={handleRecordEnquiry}
+              user={user}
             />
           }
         />
@@ -855,6 +915,7 @@ function AppRoutes() {
               onAddToCart={handleAddToCart}
               onOpenCart={() => setCartOpen(true)}
               onRecordEnquiry={handleRecordEnquiry}
+              user={user}
             />
           }
         />
@@ -868,6 +929,7 @@ function AppRoutes() {
               onToggleFavoriteService={handleToggleFavoriteService}
               onContactService={(s) => setContactService(s)}
               onRecordEnquiry={handleRecordEnquiry}
+              user={user}
             />
           }
         />
@@ -880,6 +942,7 @@ function AppRoutes() {
               onToggleFavoriteService={handleToggleFavoriteService}
               onContactService={(s) => setContactService(s)}
               onRecordEnquiry={handleRecordEnquiry}
+              user={user}
             />
           }
         />
